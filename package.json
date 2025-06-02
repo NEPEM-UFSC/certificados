@@ -1,0 +1,14 @@
+{
+  "name": "vite-quickstart",
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "vite",
+    "start": "npm run dev",
+    "build": "tsc && vite build",
+    "serve": "vite preview"
+  },
+  "devDependencies": {
+    "typescript": "^4.3.2",
+    "vite": "^2.6.0"
+  }
+}
