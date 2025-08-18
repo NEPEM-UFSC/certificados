@@ -46,8 +46,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  verifyButton.addEventListener('click', async () => {
-    const code = certificateCodeInput.value.trim();
+  const verifyCertificate = async (code: string) => {
     resultDiv.innerHTML = ''; // Clear previous results
     resultDiv.className = 'mt-6 p-4 rounded-md text-center'; // Reset class
 
@@ -109,5 +108,19 @@ document.addEventListener('DOMContentLoaded', () => {
       // @ts-ignore
       lucide.createIcons();
     }
+  };
+
+  verifyButton.addEventListener('click', async () => {
+    const code = certificateCodeInput.value.trim();
+    verifyCertificate(code);
   });
+
+  // Check for 'codigo' parameter in URL on page load
+  const urlParams = new URLSearchParams(window.location.search);
+  const codigoFromUrl = urlParams.get('codigo');
+
+  if (codigoFromUrl) {
+    certificateCodeInput.value = codigoFromUrl;
+    verifyCertificate(codigoFromUrl);
+  }
 });
