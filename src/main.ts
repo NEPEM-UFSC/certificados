@@ -1,29 +1,10 @@
 import './styles.css'
 
-const app = document.querySelector<HTMLDivElement>('#app')!
-
-app.innerHTML = `
-  <div class="flex justify-center mb-4">
-    <a href="https://nepemufsc.com" target="_blank" rel="noopener noreferrer">
-      <img src="logo.png" alt="Logo" class="h-16 w-auto">
-    </a>
-  </div>
-  <h1 class="text-2xl font-bold mb-6 text-center text-gray-800">Verificação de Certificados</h1>
-  <div class="mb-4">
-    <label for="certificateCode" class="block text-gray-700 text-sm font-bold mb-2">Código do Certificado:</label>
-    <input type="text" id="certificateCode" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" placeholder="Insira o código aqui">
-  </div>
-  <button id="verifyButton" class="bg-green-700 hover:bg-green-800 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline w-full flex items-center justify-center">
-    <span data-lucide="check-circle" class="mr-2"></span>
-    Verificar
-  </button>
-  <div id="result" class="mt-6 p-4 rounded-md text-center"></div>
-`
-
 document.addEventListener('DOMContentLoaded', () => {
-  const verifyButton = document.getElementById('verifyButton') as HTMLButtonElement;
-  const certificateCodeInput = document.getElementById('certificateCode') as HTMLInputElement;
-  const resultDiv = document.getElementById('result') as HTMLDivElement;
+  const searchButton = document.getElementById('searchButton') as HTMLButtonElement;
+  const certificateNumberInput = document.getElementById('certificateNumber') as HTMLInputElement;
+  const resultSection = document.getElementById('resultSection') as HTMLDivElement;
+  const resultMessage = document.getElementById('resultMessage') as HTMLParagraphElement;
   const certificateModal = document.getElementById('certificateModal') as HTMLDivElement;
   const closeModalButton = document.getElementById('closeModalButton') as HTMLButtonElement;
   const closeModalIcon = document.getElementById('closeModal') as HTMLButtonElement;
@@ -52,27 +33,31 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   const verifyCertificate = async (code: string) => {
-    resultDiv.innerHTML = ''; // Clear previous results
-    resultDiv.className = 'mt-6 p-4 rounded-md text-center'; // Reset class
+    resultSection.classList.add('hidden'); // Hide previous results
+    resultMessage.innerHTML = ''; // Clear previous message
 
     if (!code) {
-      resultDiv.innerHTML = `<p class="text-red-600 flex items-center justify-center"><span data-lucide="alert-circle" class="mr-2"></span> Por favor, insira um código de certificado.</p>`;
-      resultDiv.className = 'mt-6 p-4 rounded-md text-center bg-red-100 border border-red-400';
+      resultSection.classList.remove('hidden');
+      resultSection.className = 'bg-red-100 border-l-4 border-red-400 p-4 mb-4 rounded';
+      resultMessage.className = 'text-red-800 font-semibold flex items-center justify-center';
+      resultMessage.innerHTML = `<span data-lucide="alert-circle" class="mr-2"></span> Por favor, insira um código de certificado.`;
       // @ts-ignore
       lucide.createIcons();
       return;
     }
 
-    verifyButton.disabled = true;
-    verifyButton.innerHTML = `<span data-lucide="loader" class="mr-2 animate-spin"></span> Verificando...`;
+    searchButton.disabled = true;
+    searchButton.innerHTML = `<span data-lucide="loader" class="mr-2 animate-spin"></span> Verificando...`;
     // @ts-ignore
     lucide.createIcons();
 
     try {
       const response = await fetch(`/.netlify/functions/getCertificate?code=${code}`);
       if (response.status === 404) {
-        resultDiv.innerHTML = `<p class="text-red-600 flex items-center justify-center"><span data-lucide="x-circle" class="mr-2"></span> Certificado não encontrado em nossa base de dados.</p>`;
-        resultDiv.className = 'mt-6 p-4 rounded-md text-center bg-red-100 border border-red-400';
+        resultSection.classList.remove('hidden');
+        resultSection.className = 'bg-red-100 border-l-4 border-red-400 p-4 mb-4 rounded';
+        resultMessage.className = 'text-red-800 font-semibold flex items-center justify-center';
+        resultMessage.innerHTML = `<span data-lucide="x-circle" class="mr-2"></span> Certificado não encontrado em nossa base de dados.`;
         // @ts-ignore
         lucide.createIcons();
         return;
@@ -102,23 +87,27 @@ document.addEventListener('DOMContentLoaded', () => {
           <p class="flex items-center"><span data-lucide="clock" class="mr-2 text-green-700"></span><strong>Timestamp:</strong> ${formattedTimestamp}</p>
         `;
         showModal();
-        resultDiv.innerHTML = `<p class="text-green-600 flex items-center justify-center"><span data-lucide="check-circle" class="mr-2"></span> Certificado encontrado!</p>`;
-        resultDiv.className = 'mt-6 p-4 rounded-md text-center bg-green-100 border border-green-400';
+        resultSection.classList.remove('hidden');
+        resultSection.className = 'bg-green-50 border-l-4 border-green-400 p-4 mb-4 rounded';
+        resultMessage.className = 'text-green-800 font-semibold flex items-center justify-center';
+        resultMessage.innerHTML = `<span data-lucide="check-circle" class="mr-2"></span> Certificado encontrado!`;
       }
     } catch (error) {
       console.error('Erro ao carregar ou verificar o certificado:', error);
-      resultDiv.innerHTML = `<p class="text-red-600 flex items-center justify-center"><span data-lucide="alert-triangle" class="mr-2"></span> Ocorreu um erro ao verificar o certificado. Tente novamente.</p>`;
-      resultDiv.className = 'mt-6 p-4 rounded-md text-center bg-red-100 border border-red-400';
+      resultSection.classList.remove('hidden');
+      resultSection.className = 'bg-red-100 border-l-4 border-red-400 p-4 mb-4 rounded';
+      resultMessage.className = 'text-red-800 font-semibold flex items-center justify-center';
+      resultMessage.innerHTML = `<span data-lucide="alert-triangle" class="mr-2"></span> Ocorreu um erro ao verificar o certificado. Tente novamente.`;
     } finally {
-      verifyButton.disabled = false;
-      verifyButton.innerHTML = `<span data-lucide="check-circle" class="mr-2"></span> Verificar`;
+      searchButton.disabled = false;
+      searchButton.innerHTML = `<span data-lucide="search" class="w-5 h-5"></span>`;
       // @ts-ignore
       lucide.createIcons();
     }
   };
 
-  verifyButton.addEventListener('click', async () => {
-    const code = certificateCodeInput.value.trim();
+  searchButton.addEventListener('click', async () => {
+    const code = certificateNumberInput.value.trim();
     verifyCertificate(code);
   });
 
@@ -127,7 +116,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const codigoFromUrl = urlParams.get('codigo');
 
   if (codigoFromUrl) {
-    certificateCodeInput.value = codigoFromUrl;
+    certificateNumberInput.value = codigoFromUrl;
     verifyCertificate(codigoFromUrl);
   }
 });
