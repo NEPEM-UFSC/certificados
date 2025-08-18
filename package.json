@@ -7,6 +7,10 @@
     "build": "tsc && vite build",
     "serve": "vite preview"
   },
+  "dependencies": {
+    "firebase-admin": "^12.7.0",
+    "firebase-functions": "^5.0.0"
+  },
   "devDependencies": {
     "autoprefixer": "^10.4.21",
     "postcss": "^8.5.6",
