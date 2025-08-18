@@ -69,13 +69,18 @@ document.addEventListener('DOMContentLoaded', () => {
     lucide.createIcons();
 
     try {
-      const response = await fetch('/certificates.json');
+      const response = await fetch(`/.netlify/functions/getCertificate?code=${code}`);
+      if (response.status === 404) {
+        resultDiv.innerHTML = `<p class="text-red-600 flex items-center justify-center"><span data-lucide="x-circle" class="mr-2"></span> Certificado não encontrado em nossa base de dados.</p>`;
+        resultDiv.className = 'mt-6 p-4 rounded-md text-center bg-red-100 border border-red-400';
+        // @ts-ignore
+        lucide.createIcons();
+        return;
+      }
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
-      const certificates = await response.json();
-
-      const certificate = certificates.find((cert: any) => cert.code === code);
+      const certificate = await response.json();
 
       if (certificate) {
         const formattedTimestamp = new Date(certificate.timestamp).toLocaleString('pt-BR', {
@@ -93,15 +98,12 @@ document.addEventListener('DOMContentLoaded', () => {
           <p class="flex items-center"><span data-lucide="user" class="mr-2 text-green-700"></span><strong>Nome:</strong> ${certificate.name}</p>
           <p class="flex items-center"><span data-lucide="calendar" class="mr-2 text-green-700"></span><strong>Evento:</strong> ${certificate.event}</p>
           <p class="flex items-center"><span data-lucide="pencil" class="mr-2 text-green-700"></span><strong>Criado por:</strong> ${certificate.createdBy}</p>
-          <p class="flex items-center"><span data-lucide="calendar-check" class="mr-2 text-green-700"></span><strong>Data de Emissão:</strong> ${certificate.date}</p>
+          <p class="flex items-center"><span data-lucide="calendar-check" class="mr-2 text-green-700"></span><strong>Evento:</strong> ${certificate.event}</p>
           <p class="flex items-center"><span data-lucide="clock" class="mr-2 text-green-700"></span><strong>Timestamp:</strong> ${formattedTimestamp}</p>
         `;
         showModal();
         resultDiv.innerHTML = `<p class="text-green-600 flex items-center justify-center"><span data-lucide="check-circle" class="mr-2"></span> Certificado encontrado!</p>`;
         resultDiv.className = 'mt-6 p-4 rounded-md text-center bg-green-100 border border-green-400';
-      } else {
-        resultDiv.innerHTML = `<p class="text-red-600 flex items-center justify-center"><span data-lucide="x-circle" class="mr-2"></span> Certificado não encontrado em nossa base de dados.</p>`;
-        resultDiv.className = 'mt-6 p-4 rounded-md text-center bg-red-100 border border-red-400';
       }
     } catch (error) {
       console.error('Erro ao carregar ou verificar o certificado:', error);
