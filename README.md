@@ -1,40 +1,52 @@
-# Vite Quickstart
-> Starter template for a Vite app
+# Certificados - Gerenciador e Validador
 
-[![GitHub tag](https://img.shields.io/github/tag/MichaelCurrin/vite-quickstart?include_prereleases=&sort=semver&color=blue)](https://github.com/MichaelCurrin/vite-quickstart/releases/)
-[![License](https://img.shields.io/badge/License-MIT-blue)](#license)
+Este projeto é uma aplicação web para gerenciamento e validação de certificados. Ele permite que os usuários verifiquem a autenticidade de certificados emitidos, utilizando um código único associado a cada certificado.
 
+## Funcionalidades
 
-## Preview
+- **Validação de Certificados**: Verifique a autenticidade de certificados utilizando um código único.
+- **Gerenciamento de Certificados**: Integração com Firebase Firestore para armazenar e gerenciar informações de certificados.
+- **Interface Responsiva**: Design otimizado para dispositivos móveis e desktops.
 
-<div align="center">
-    <img src="/sample.png" alt="Sample screenshot" width="500">
-</div>
+## Tecnologias Utilizadas
 
-<br>
+- **Frontend**: Vite, TypeScript, Tailwind CSS
+- **Backend**: Firebase Functions, Firebase Firestore
+- **Hospedagem**: Netlify
 
-<div align="center">
+## Estrutura do Projeto
 
-[![Use this template](https://img.shields.io/badge/Generate-Use_this_template-2ea44f?style=for-the-badge)](https://github.com/MichaelCurrin/vite-quickstart/generate)
+- `src/`: Contém os arquivos principais do frontend, incluindo TypeScript e CSS.
+- `netlify/functions/`: Contém as funções serverless para validação de certificados.
+- `index.html`: Página principal da aplicação.
+- `certificates.json`: Arquivo de exemplo com dados de certificados.
 
-</div>
+## Como Executar
 
+1. Clone o repositório:
+   ```bash
+   git clone https://github.com/NEPEM-UFSC/certificados.git
+   ```
+2. Instale as dependências:
+   ```bash
+   npm install
+   ```
+3. Inicie o servidor de desenvolvimento:
+   ```bash
+   netlify dev
+   ```
+4. Acesse a aplicação em `http://localhost:3000`.
 
+## Configuração do Firebase
 
-## About
+Certifique-se de configurar as variáveis de ambiente no arquivo `.env`:
 
-For links and info, see [Vite](https://michaelcurrin.github.io/dev-resources/resources/javascript/packages/bundlers/vite.html) in Dev Resources.
+```
+FIREBASE_PROJECT_ID=seu-projeto-id
+FIREBASE_CLIENT_EMAIL=seu-email@projeto.iam.gserviceaccount.com
+FIREBASE_PRIVATE_KEY=-----BEGIN PRIVATE KEY-----\n...
+```
 
-This project is a vanilla app (no frontend framework), to keep the emphasis on Vite and simplicity. And uses TypeScript to showcase that feature.
+## Licença
 
-### Structure
-
-- [src](/src/) for TypeScript and CSS.
-- [index.html](/index.html) for webpage. When the build runs, the reference to `/src/main.ts` will be replaced with `/assets/index.ad4f7fa4.js` and a line will be added for the CSS file.
-- [tsconfig.json](/tsconfig.json) for TypeScript.
-- `dist` - output directory for HTML and assets (plain JS, CSS, and images).
-
-
-## License
-
-Released under [MIT](/LICENSE) by [@MichaelCurrin](https://github.com/MichaelCurrin).
+Este projeto é licenciado sob a [MIT License](LICENSE).
