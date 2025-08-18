@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <link rel="icon" type="image/png" href="favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
     <title>Verificação de Certificados</title>
@@ -13,7 +13,51 @@
 </head>
 
 <body class="bg-gradient-to-br from-green-500 to-green-700 flex items-center justify-center min-h-screen">
-    <div id="app" class="bg-white p-8 rounded-lg shadow-md w-full max-w-lg"></div>
+    <div id="app" class="bg-white p-8 rounded-lg shadow-md w-full max-w-lg">
+
+                <!-- Adicionando o logo acima do título -->
+        <img src="https://via.placeholder.com/150" alt="Placeholder Logo" class="h-16 w-auto mx-auto mb-4 block">
+        <h1 class="text-3xl font-extrabold text-center text-green-800 mb-6">Verificação de Certificados</h1>
+
+        <div class="mb-4">
+            <label for="certificateNumber" class="block text-gray-700 text-sm font-bold mb-2">Número do Certificado:</label>
+            <input id="certificateNumber" type="text" placeholder="Digite o número do certificado"
+                class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+                aria-label="Número do Certificado">
+        </div>
+        <div class="flex justify-between items-center mb-4">
+            <div class="flex-1 mr-2">
+                <label for="cpfCnpj" class="block text-gray-700 text-sm font-bold mb-2">CPF ou CNPJ:</label>
+                <input id="cpfCnpj" type="text" placeholder="Digite o CPF ou CNPJ"
+                    class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+                    aria-label="CPF ou CNPJ">
+            </div>
+            <div class="flex-none">
+                <button id="searchButton"
+                    class="bg-green-700 hover:bg-green-800 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
+                    aria-label="Search">
+                    <span data-lucide="search" class="w-5 h-5"></span>
+                </button>
+            </div>
+        </div>
+
+        <div id="resultSection" class="hidden bg-green-50 border-l-4 border-green-400 p-4 mb-4 rounded">
+            <p id="resultMessage" class="text-green-800 font-semibold"></p>
+        </div>
+
+        <div class="flex justify-center">
+            <button id="printButton"
+                class="bg-white border border-green-700 text-green-700 font-bold py-2 px-4 rounded-l focus:outline-none focus:shadow-outline"
+                aria-label="Print">
+                <span data-lucide="printer" class="w-5 h-5"></span>
+            </button>
+            <button id="downloadButton"
+                class="bg-white border border-green-700 text-green-700 font-bold py-2 px-4 rounded-r focus:outline-none focus:shadow-outline"
+                aria-label="Download">
+                <span data-lucide="download" class="w-5 h-5"></span>
+            </button>
+        </div>
+    </div>
 
     <!-- Modal de Detalhes do Certificado -->
     <div id="certificateModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden items-center justify-center p-4">
@@ -26,7 +70,8 @@
                 <!-- Conteúdo do certificado será injetado aqui -->
             </div>
             <div class="mt-6 text-center">
-                <button id="closeModalButton" class="bg-green-700 hover:bg-green-800 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline">
+                <button id="closeModalButton" class="bg-green-700 hover:bg-green-800 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
+                    aria-label="Fechar Modal">
                     Fechar
                 </button>
             </div>

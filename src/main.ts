@@ -3,6 +3,11 @@ import './styles.css'
 const app = document.querySelector<HTMLDivElement>('#app')!
 
 app.innerHTML = `
+  <div class="flex justify-center mb-4">
+    <a href="https://nepemufsc.com" target="_blank" rel="noopener noreferrer">
+      <img src="logo.png" alt="Logo" class="h-16 w-auto">
+    </a>
+  </div>
   <h1 class="text-2xl font-bold mb-6 text-center text-gray-800">Verificação de Certificados</h1>
   <div class="mb-4">
     <label for="certificateCode" class="block text-gray-700 text-sm font-bold mb-2">Código do Certificado:</label>
