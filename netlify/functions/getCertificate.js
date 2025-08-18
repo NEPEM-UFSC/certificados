@@ -2,13 +2,24 @@ const admin = require('firebase-admin');
 
 // Inicializa o Firebase Admin SDK apenas uma vez
 if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      privateKey: process.env.FIREBASE_PRIVATE_KEY ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n') : undefined,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-    }),
-  });
+  // Se a variável de ambiente do Netlify existir, use as variáveis de ambiente
+  if (process.env.NETLIFY) {
+    console.log("Rodando no ambiente Netlify, usando variáveis de ambiente.");
+    admin.initializeApp({
+      credential: admin.credential.cert({
+        projectId: process.env.FIREBASE_PROJECT_ID,
+        privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+      })
+    });
+  } else {
+    // Caso contrário, estamos rodando localmente, use o arquivo JSON
+    console.log("Rodando localmente, usando o arquivo serviceAccountKey.json.");
+    const serviceAccount = require('../../.firebaserc/serviceAccountKey.json'); // Ajuste o caminho!
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount)
+    });
+  }
 }
 
 const db = admin.firestore();
@@ -21,29 +32,31 @@ exports.handler = async (event, context) => {
     };
   }
 
-  const { id } = event.queryStringParameters; // Changed 'code' to 'id'
+  const { code } = event.queryStringParameters; // Usar 'code' como parâmetro de consulta
 
-  if (!id) { // Changed 'code' to 'id'
+  if (!code) {
     return {
       statusCode: 400,
-      body: JSON.stringify({ message: 'Missing "id" query parameter' }), // Updated message
+      body: JSON.stringify({ message: 'Missing "code" query parameter' }),
     };
   }
 
   try {
-    const certificateDoc = await db.collection('certificates').doc(id).get(); // Query by document ID
+    const certificatesQuery = await db.collection('certificates').where('code', '==', code).get(); // Buscar pelo campo 'code'
 
-    if (!certificateDoc.exists) { // Check if document exists
+    if (certificatesQuery.empty) { // Verificar se a consulta retornou resultados
       return {
         statusCode: 404,
         body: JSON.stringify({ message: 'Certificate not found' }),
       };
     }
 
-    const certificateData = certificateDoc.data(); // Get data directly from the document
+    const certificateDoc = certificatesQuery.docs[0]; // Pegar o primeiro documento correspondente
+    const certificateData = certificateDoc.data(); // Obter os dados do documento
+
     return {
       statusCode: 200,
-      body: JSON.stringify(certificateData),
+      body: JSON.stringify({ id: certificateDoc.id, ...certificateData }), // Incluir o ID do documento no retorno
     };
   } catch (error) {
     console.error('Error fetching certificate:', error);
