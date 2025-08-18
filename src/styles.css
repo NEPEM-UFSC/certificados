@@ -1,1 +1,15 @@
 /* Tailwind CSS is loaded via CDN in index.html, so this file can remain empty or be used for custom styles. */
+
+@media (max-width: 640px) {
+  #app {
+    padding: 4px;
+  }
+
+  #certificateModal {
+    padding: 2px;
+  }
+
+  button {
+    font-size: 0.875rem;
+  }
+}
