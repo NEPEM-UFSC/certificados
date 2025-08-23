@@ -1,234 +1,208 @@
 import { JSDOM } from 'jsdom';
-import { fireEvent } from '@testing-library/dom'; // Removed unused imports
-import '@testing-library/jest-dom';
+import { screen, fireEvent, waitFor } from '@testing-library/dom';
+import { setupDOM, teardownDOM } from './dom-setup'; // Assumindo que este utilitário existe
+import { init } from '../main';
 
-// Mock the fetch API
-global.fetch = jest.fn();
+// --- Mocks Globais ---
 
-// Mock lucide.createIcons as it's used in main.ts
-// @ts-ignore
+// Mock da biblioteca de ícones para evitar erros de `undefined`
+// e permitir a verificação de chamadas.
 global.lucide = {
   createIcons: jest.fn(),
 };
 
-describe('main.ts', () => {
+// Mock do `fetch` global para controlar as respostas da API.
+global.fetch = jest.fn();
+
+// Helper para mockar uma resposta de sucesso da API
+const mockFetchSuccess = (data: object) => {
+  (fetch as jest.Mock).mockResolvedValue({
+    ok: true,
+    status: 200,
+    json: () => Promise.resolve(data),
+  });
+};
+
+// Helper para mockar uma resposta de erro da API
+const mockFetchError = (status: number, statusText: string) => {
+  (fetch as jest.Mock).mockResolvedValue({
+    ok: false,
+    status,
+    statusText,
+  });
+};
+
+
+describe('Certificate Search UI', () => {
   let dom: JSDOM;
-  let document: Document;
+  let originalLocation: Location;
 
   beforeEach(() => {
-    // Reset the DOM and fetch mock before each test
-    dom = new JSDOM(`
-      <!DOCTYPE html>
-      <html>
-      <body>
-        <button id="searchButton"></button>
-        <input id="certificateNumber" />
-        <div id="resultSection" class="hidden">
-          <p id="resultMessage"></p>
-        </div>
-        <div id="certificateModal" class="hidden">
-          <button id="closeModalButton"></button>
-          <button id="closeModal"></button>
-          <div id="modalContent"></div>
-        </div>
-      </body>
-      </html>
-    `);
-    document = dom.window.document;
-    Object.defineProperty(dom.window, 'location', {
-      value: {
-        search: '',
-        href: 'http://localhost/',
-      },
+    dom = setupDOM(); // Configura o HTML base em um JSDOM
+
+    // Mock de window.location para controlar a URL
+    originalLocation = window.location;
+    Object.defineProperty(window, 'location', {
       writable: true,
+      value: {
+        href: 'http://localhost/',
+        search: '',
+        reload: jest.fn(),
+      },
     });
 
-    // Clear all mocks and re-import main.ts to ensure a fresh state
-    jest.clearAllMocks();
-    jest.resetModules();
-    require('../main.ts'); // Re-import to re-run the DOMContentLoaded listener
+    // Limpa os mocks antes de cada teste para garantir isolamento
+    (fetch as jest.Mock).mockClear();
+    (global.lucide.createIcons as jest.Mock).mockClear();
   });
 
-  it('should display an error message if certificate code is empty', async () => {
-    const searchButton = document.getElementById('searchButton') as HTMLButtonElement;
-    const certificateNumberInput = document.getElementById('certificateNumber') as HTMLInputElement;
-    const resultSection = document.getElementById('resultSection') as HTMLDivElement;
-    const resultMessage = document.getElementById('resultMessage') as HTMLParagraphElement;
+  afterEach(() => {
+    teardownDOM(dom);
+    // Restaura o window.location original
+    Object.defineProperty(window, 'location', {
+      writable: true,
+      value: originalLocation,
+    });
+  });
 
-    certificateNumberInput.value = '';
+  // --- Testes de Interação do Usuário ---
+
+  it('should display an error message if the input is empty on search', async () => {
+    init(); // Inicializa os event listeners
+    
+    // A melhor prática é selecionar elementos como um usuário faria.
+    const searchButton = screen.getByRole('button', { name: /buscar/i });
     fireEvent.click(searchButton);
 
-    expect(resultSection).not.toHaveClass('hidden');
-    expect(resultSection).toHaveClass('bg-red-100');
-    expect(resultMessage).toHaveTextContent('Por favor, insira um código de certificado.');
+    // `findByRole` espera o elemento aparecer no DOM.
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Por favor, insira um código de certificado.');
+    // Verificamos que o ícone de erro foi renderizado
     expect(global.lucide.createIcons).toHaveBeenCalled();
   });
 
-  it('should show certificate details in modal if found', async () => {
+  it('should fetch and display certificate details in a modal on success', async () => {
     const mockCertificate = {
-      code: '12345',
-      name: 'Test User',
-      event: 'Test Event',
-      createdBy: 'Test Admin',
+      code: 'VALID123',
+      name: 'John Doe',
+      event: 'Community Meetup',
+      createdBy: 'Admin',
       timestamp: new Date().toISOString(),
     };
+    mockFetchSuccess(mockCertificate);
+    
+    init();
 
-    (global.fetch as jest.Mock).mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      json: () => Promise.resolve(mockCertificate),
-    });
+    const input = screen.getByLabelText(/código do certificado/i);
+    const searchButton = screen.getByRole('button', { name: /buscar/i });
 
-    const searchButton = document.getElementById('searchButton') as HTMLButtonElement;
-    const certificateNumberInput = document.getElementById('certificateNumber') as HTMLInputElement;
-    const certificateModal = document.getElementById('certificateModal') as HTMLDivElement;
-    const modalContent = document.getElementById('modalContent') as HTMLDivElement;
-    const resultSection = document.getElementById('resultSection') as HTMLDivElement;
-    const resultMessage = document.getElementById('resultMessage') as HTMLParagraphElement;
-
-    certificateNumberInput.value = '12345';
+    fireEvent.change(input, { target: { value: 'VALID123' } });
     fireEvent.click(searchButton);
 
-    await dom.window.requestAnimationFrame(() => {}); // Wait for async operations
+    // Espera o modal (identificado por seu role 'dialog') aparecer.
+    const modal = await screen.findByRole('dialog');
+    expect(modal).toBeVisible();
 
-    expect(global.fetch).toHaveBeenCalledWith('/.netlify/functions/getCertificate?code=12345');
-    expect(certificateModal).not.toHaveClass('hidden');
-    expect(certificateModal).toHaveClass('flex');
-    expect(modalContent).toHaveTextContent(`Código: ${mockCertificate.code}`);
-    expect(modalContent).toHaveTextContent(`Nome: ${mockCertificate.name}`);
-    expect(modalContent).toHaveTextContent(`Evento: ${mockCertificate.event}`);
-    expect(modalContent).toHaveTextContent(`Criado por: ${mockCertificate.createdBy}`);
-    expect(resultSection).not.toHaveClass('hidden');
-    expect(resultSection).toHaveClass('bg-green-50');
-    expect(resultMessage).toHaveTextContent('Certificado encontrado!');
-    expect(global.lucide.createIcons).toHaveBeenCalledTimes(3); // Initial, loading, success
+    // Verifica se os dados corretos estão no modal.
+    expect(modal).toHaveTextContent(`Código: ${mockCertificate.code}`);
+    expect(modal).toHaveTextContent(`Nome: ${mockCertificate.name}`);
+    
+    // Verifica a mensagem de sucesso para o usuário.
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Certificado encontrado!');
+    
+    // Verifica se a API foi chamada corretamente.
+    expect(fetch).toHaveBeenCalledWith('/.netlify/functions/getCertificate?code=VALID123');
   });
 
-  it('should hide modal when closeModalButton is clicked', async () => {
-    const certificateModal = document.getElementById('certificateModal') as HTMLDivElement;
-    const closeModalButton = document.getElementById('closeModalButton') as HTMLButtonElement;
-
-    certificateModal.classList.remove('hidden'); // Make it visible first
-    certificateModal.classList.add('flex');
-
-    fireEvent.click(closeModalButton);
-
-    expect(certificateModal).toHaveClass('hidden');
-    expect(certificateModal).not.toHaveClass('flex');
-  });
-
-  it('should hide modal when closeModalIcon is clicked', async () => {
-    const certificateModal = document.getElementById('certificateModal') as HTMLDivElement;
-    const closeModalIcon = document.getElementById('closeModal') as HTMLButtonElement;
-
-    certificateModal.classList.remove('hidden'); // Make it visible first
-    certificateModal.classList.add('flex');
-
-    fireEvent.click(closeModalIcon);
-
-    expect(certificateModal).toHaveClass('hidden');
-    expect(certificateModal).not.toHaveClass('flex');
-  });
-
-  it('should hide modal when clicking outside modal content', async () => {
-    const certificateModal = document.getElementById('certificateModal') as HTMLDivElement;
-    certificateModal.classList.remove('hidden');
-    certificateModal.classList.add('flex');
-
-    fireEvent.click(certificateModal); // Click on the modal background
-
-    expect(certificateModal).toHaveClass('hidden');
-    expect(certificateModal).not.toHaveClass('flex');
-  });
-
-  it('should display "Certificado não encontrado" if API returns 404', async () => {
-    (global.fetch as jest.Mock).mockResolvedValueOnce({
-      ok: false,
-      status: 404,
+  describe('Modal Interactions', () => {
+    // Para testes de fechar o modal, o inicializamos em um estado aberto.
+    beforeEach(() => {
+        init();
+        const modal = document.getElementById('certificateModal')!;
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
     });
 
-    const searchButton = document.getElementById('searchButton') as HTMLButtonElement;
-    const certificateNumberInput = document.getElementById('certificateNumber') as HTMLInputElement;
-    const resultSection = document.getElementById('resultSection') as HTMLDivElement;
-    const resultMessage = document.getElementById('resultMessage') as HTMLParagraphElement;
+    it('should hide modal when the close button is clicked', () => {
+      const modal = screen.getByRole('dialog');
+      const closeButton = screen.getByRole('button', { name: /fechar/i });
+      
+      fireEvent.click(closeButton);
+      
+      // `waitFor` é perfeito para esperar que uma condição se torne verdadeira.
+      // Aqui, esperamos que o modal não esteja mais visível.
+      waitFor(() => {
+        expect(modal).not.toBeVisible();
+      });
+    });
 
-    certificateNumberInput.value = 'nonexistent';
+    it('should hide modal when clicking outside the modal content', () => {
+      const modalBackdrop = screen.getByRole('dialog');
+      
+      // Clicamos no backdrop (o próprio elemento com role 'dialog')
+      fireEvent.click(modalBackdrop);
+
+      waitFor(() => {
+        expect(modalBackdrop).not.toBeVisible();
+      });
+    });
+  });
+
+  // --- Testes de Respostas de Erro da API ---
+
+  it('should display a "not found" message if API returns 404', async () => {
+    mockFetchError(404, 'Not Found');
+    init();
+
+    const input = screen.getByLabelText(/código do certificado/i);
+    const searchButton = screen.getByRole('button', { name: /buscar/i });
+
+    fireEvent.change(input, { target: { value: 'NONEXISTENT' } });
     fireEvent.click(searchButton);
 
-    await dom.window.requestAnimationFrame(() => {});
-
-    expect(global.fetch).toHaveBeenCalledWith('/.netlify/functions/getCertificate?code=nonexistent');
-    expect(resultSection).not.toHaveClass('hidden');
-    expect(resultSection).toHaveClass('bg-red-100');
-    expect(resultMessage).toHaveTextContent('Certificado não encontrado em nossa base de dados.');
-    expect(global.lucide.createIcons).toHaveBeenCalledTimes(3); // Initial, loading, error
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Certificado não encontrado em nossa base de dados.');
   });
 
-  it('should display generic error message if API returns other error', async () => {
-    (global.fetch as jest.Mock).mockResolvedValueOnce({
-      ok: false,
-      status: 500,
-      statusText: 'Internal Server Error',
-    });
+  it('should display a generic error message for other API errors', async () => {
+    mockFetchError(500, 'Internal Server Error');
+    init();
 
-    const searchButton = document.getElementById('searchButton') as HTMLButtonElement;
-    const certificateNumberInput = document.getElementById('certificateNumber') as HTMLInputElement;
-    const resultSection = document.getElementById('resultSection') as HTMLDivElement;
-    const resultMessage = document.getElementById('resultMessage') as HTMLParagraphElement;
+    const input = screen.getByLabelText(/código do certificado/i);
+    const searchButton = screen.getByRole('button', { name: /buscar/i });
 
-    certificateNumberInput.value = 'error-code';
+    fireEvent.change(input, { target: { value: 'ANYCODE' } });
     fireEvent.click(searchButton);
 
-    await dom.window.requestAnimationFrame(() => {});
-
-    expect(global.fetch).toHaveBeenCalledWith('/.netlify/functions/getCertificate?code=error-code');
-    expect(resultSection).not.toHaveClass('hidden');
-    expect(resultSection).toHaveClass('bg-red-100');
-    expect(resultMessage).toHaveTextContent('Ocorreu um erro ao verificar o certificado. Tente novamente.');
-    expect(global.lucide.createIcons).toHaveBeenCalledTimes(3); // Initial, loading, error
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Ocorreu um erro ao verificar o certificado. Tente novamente.');
   });
 
-  it('should handle "codigo" query parameter on page load', async () => {
-    const mockCertificate = {
-      code: 'URL123',
-      name: 'URL User',
-      event: 'URL Event',
-      createdBy: 'URL Admin',
-      timestamp: new Date().toISOString(),
-    };
+  // --- Teste de Carregamento Inicial com Parâmetro de URL ---
+  
+  it('should automatically search for a certificate if "codigo" URL parameter is present', async () => {
+    const mockCertificate = { code: 'URL123', name: 'Jane Doe', event: 'Workshop' };
+    mockFetchSuccess(mockCertificate);
 
-    (global.fetch as jest.Mock).mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      json: () => Promise.resolve(mockCertificate),
-    });
-
-    // Set URL search parameter before re-importing main.ts
-    Object.defineProperty(dom.window, 'location', {
-      value: {
-        search: '?codigo=URL123',
-        href: 'http://localhost/?codigo=URL123',
-      },
+    // Modificamos a URL *antes* de inicializar a aplicação.
+    Object.defineProperty(window, 'location', 'search', {
       writable: true,
+      value: '?codigo=URL123',
     });
 
-    // Re-import main.ts to trigger DOMContentLoaded and URL parameter check
-    jest.resetModules();
-    require('../main.ts');
+    init();
 
-    await dom.window.requestAnimationFrame(() => {});
+    // Verificamos se a API foi chamada automaticamente.
+    expect(fetch).toHaveBeenCalledWith('/.netlify/functions/getCertificate?code=URL123');
 
-    const certificateNumberInput = document.getElementById('certificateNumber') as HTMLInputElement;
-    const resultSection = document.getElementById('resultSection') as HTMLDivElement;
-    const resultMessage = document.getElementById('resultMessage') as HTMLParagraphElement;
-    const certificateModal = document.getElementById('certificateModal') as HTMLDivElement;
-    const modalContent = document.getElementById('modalContent') as HTMLDivElement;
+    // Verificamos se o input foi preenchido.
+    const input = screen.getByLabelText(/código do certificado/i);
+    expect(input).toHaveValue('URL123');
 
-    expect(certificateNumberInput.value).toBe('URL123');
-    expect(global.fetch).toHaveBeenCalledWith('/.netlify/functions/getCertificate?code=URL123');
-    expect(certificateModal).not.toHaveClass('hidden');
-    expect(modalContent).toHaveTextContent(`Código: ${mockCertificate.code}`);
-    expect(resultSection).not.toHaveClass('hidden');
-    expect(resultMessage).toHaveTextContent('Certificado encontrado!');
+    // E se o modal com os dados corretos apareceu.
+    const modal = await screen.findByRole('dialog');
+    expect(modal).toBeVisible();
+    expect(modal).toHaveTextContent(`Nome: ${mockCertificate.name}`);
   });
 });

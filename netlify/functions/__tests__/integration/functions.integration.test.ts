@@ -1,12 +1,13 @@
-// This file outlines conceptual integration tests for Netlify Functions.
-// To run these tests, you would typically need a local Netlify Dev environment running.
+// Integration tests for Netlify Functions
+// These tests should be run when the functions are actually deployed or served locally.
 // You would then make actual HTTP requests to the locally served functions.
 
-import fetch from 'node-fetch'; // Use node-fetch for Node.js environment
+// Use a porta fornecida pelo Jest ou uma porta padrão
+const PORT = process.env.FUNCTIONS_PORT || 9999;
+const BASE_URL = `http://localhost:${PORT}/.netlify/functions`;
 
-// Base URL for your locally served Netlify functions
-// This assumes you are running 'netlify dev' and functions are available at /.netlify/functions/
-const BASE_URL = 'http://localhost:8888/.netlify/functions';
+// O fetch já está disponível globalmente em ambientes de teste Node recentes ou via polyfill.
+import fetch from 'node-fetch'; // Ensure fetch is available in Node.js environment
 
 describe('Netlify Functions Integration Tests', () => {
   // Helper to generate a simple JWT for testing authenticated endpoints
