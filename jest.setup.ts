@@ -3,8 +3,6 @@ import { TextEncoder, TextDecoder } from 'util';
 // Polyfill TextEncoder and TextDecoder for JSDOM environment
 // @ts-ignore
 global.TextEncoder = TextEncoder;
-// @ts-ignore
-global.TextDecoder = TextDecoder;
 
 import '@testing-library/jest-dom';
 
@@ -21,4 +19,5 @@ declare global {
 
 global.lucide = {
   createIcons: jest.fn(),
+};
 };
