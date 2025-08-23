@@ -10,18 +10,3 @@
 [dev]
   command = "npm run dev"
   port = 3000
-
-[[headers]]
-  for = "*.js"
-  [headers.values]
-    Content-Type = "application/javascript"
-
-[[headers]]
-  for = "*.ts"
-  [headers.values]
-    Content-Type = "application/javascript"
-
-[[redirects]]
-  from = "/src/main.ts"
-  to = "/src/main.js"
-  status = 301
