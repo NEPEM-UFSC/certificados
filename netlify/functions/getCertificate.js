@@ -2,24 +2,15 @@ const admin = require('firebase-admin');
 
 // Inicializa o Firebase Admin SDK apenas uma vez
 if (!admin.apps.length) {
-  // Se a variável de ambiente do Netlify existir, use as variáveis de ambiente
-  if (process.env.NETLIFY) {
-    console.log("Rodando no ambiente Netlify, usando variáveis de ambiente.");
-    admin.initializeApp({
-      credential: admin.credential.cert({
-        projectId: process.env.FIREBASE_PROJECT_ID,
-        privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
-        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      })
-    });
-  } else {
-    // Caso contrário, estamos rodando localmente, use o arquivo JSON
-    console.log("Rodando localmente, usando o arquivo serviceAccountKey.json.");
-    const serviceAccount = require('../../.firebaserc/serviceAccountKey.json'); // Ajuste o caminho!
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount)
-    });
-  }
+  // Sempre usar variáveis de ambiente
+  console.log("Usando variáveis de ambiente para Firebase Admin SDK");
+  admin.initializeApp({
+    credential: admin.credential.cert({
+      projectId: process.env.FIREBASE_PROJECT_ID,
+      privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+    })
+  });
 }
 
 const db = admin.firestore();
@@ -42,21 +33,21 @@ exports.handler = async (event, context) => {
   }
 
   try {
-    const certificatesQuery = await db.collection('certificates').where('code', '==', code).get(); // Buscar pelo campo 'code'
+    // Buscar diretamente pelo ID do documento (que é o código do certificado)
+    const certificateDoc = await db.collection('certificates').doc(code).get();
 
-    if (certificatesQuery.empty) { // Verificar se a consulta retornou resultados
+    if (!certificateDoc.exists) {
       return {
         statusCode: 404,
         body: JSON.stringify({ message: 'Certificate not found' }),
       };
     }
 
-    const certificateDoc = certificatesQuery.docs[0]; // Pegar o primeiro documento correspondente
-    const certificateData = certificateDoc.data(); // Obter os dados do documento
+    const certificateData = certificateDoc.data();
 
     return {
       statusCode: 200,
-      body: JSON.stringify({ id: certificateDoc.id, ...certificateData }), // Incluir o ID do documento no retorno
+      body: JSON.stringify({ id: certificateDoc.id, ...certificateData }),
     };
   } catch (error) {
     console.error('Error fetching certificate:', error);

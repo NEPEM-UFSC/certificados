@@ -1,10 +1,12 @@
 [build]
   functions = "netlify/functions"
-  publish = "dist" # Assumindo que o seu build output vai para a pasta 'dist'
+  publish = "dist"
+  command = "npm run build"
 
 [functions]
   node_bundler = "esbuild"
   external_node_modules = ["firebase-admin"]
 
 [dev]
-  targetPort = 3000
+  command = "npm run dev"
+  port = 3000
