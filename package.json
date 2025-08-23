@@ -3,6 +3,7 @@
   "version": "0.5.0",
   "scripts": {
     "dev": "vite",
+    "dev:netlify": "netlify dev",
     "start": "vite",
     "build": "tsc && vite build",
     "serve": "vite preview",
