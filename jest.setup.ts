@@ -20,4 +20,3 @@ declare global {
 global.lucide = {
   createIcons: jest.fn(),
 };
-};
