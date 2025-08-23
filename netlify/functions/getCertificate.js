@@ -2,24 +2,15 @@ const admin = require('firebase-admin');
 
 // Inicializa o Firebase Admin SDK apenas uma vez
 if (!admin.apps.length) {
-  // Se a variável de ambiente do Netlify existir, use as variáveis de ambiente
-  if (process.env.NETLIFY) {
-    console.log("Rodando no ambiente Netlify, usando variáveis de ambiente.");
-    admin.initializeApp({
-      credential: admin.credential.cert({
-        projectId: process.env.FIREBASE_PROJECT_ID,
-        privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
-        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      })
-    });
-  } else {
-    // Caso contrário, estamos rodando localmente, use o arquivo JSON
-    console.log("Rodando localmente, usando o arquivo serviceAccountKey.json.");
-    const serviceAccount = require('../../.firebaserc/serviceAccountKey.json'); // Ajuste o caminho!
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount)
-    });
-  }
+  // Sempre usar variáveis de ambiente
+  console.log("Usando variáveis de ambiente para Firebase Admin SDK");
+  admin.initializeApp({
+    credential: admin.credential.cert({
+      projectId: process.env.FIREBASE_PROJECT_ID,
+      privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+    })
+  });
 }
 
 const db = admin.firestore();

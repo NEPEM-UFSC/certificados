@@ -3,20 +3,14 @@ const jwt = require('jsonwebtoken'); // Import the jsonwebtoken library
 
 // Inicializa o Firebase Admin SDK apenas uma vez
 if (!admin.apps.length) {
-  if (process.env.NETLIFY) {
-    admin.initializeApp({
-      credential: admin.credential.cert({
-        projectId: process.env.FIREBASE_PROJECT_ID,
-        privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
-        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      })
-    });
-  } else {
-    const serviceAccount = require('../../.firebaserc/serviceAccountKey.json');
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount)
-    });
-  }
+  // Sempre usar variáveis de ambiente
+  admin.initializeApp({
+    credential: admin.credential.cert({
+      projectId: process.env.FIREBASE_PROJECT_ID,
+      privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+    })
+  });
 }
 
 const db = admin.firestore();

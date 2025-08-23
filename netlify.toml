@@ -10,3 +10,4 @@
   command = "npm run dev"
   targetPort = 3000
   functionsPort = 8888
+  envFiles = [".env"]
