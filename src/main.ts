@@ -78,23 +78,27 @@ export function init() {
       const certificate = await response.json();
 
       if (certificate) {
-        const formattedTimestamp = new Date(certificate.timestamp).toLocaleString('pt-BR', {
-          year: 'numeric',
-          month: 'long',
-          day: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-          timeZoneName: 'short'
-        });
+        // Processar timestamp do Firestore
+        let formattedTimestamp = 'Data não disponível';
+        if (certificate.timestamp && certificate.timestamp._seconds) {
+          const date = new Date(certificate.timestamp._seconds * 1000);
+          formattedTimestamp = date.toLocaleString('pt-BR', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            timeZoneName: 'short'
+          });
+        }
 
         modalContent.innerHTML = `
           <p class="flex items-center"><span data-lucide="tag" class="mr-2 text-green-700"></span><strong>Código:</strong> ${certificate.code}</p>
           <p class="flex items-center"><span data-lucide="user" class="mr-2 text-green-700"></span><strong>Nome:</strong> ${certificate.name}</p>
           <p class="flex items-center"><span data-lucide="calendar" class="mr-2 text-green-700"></span><strong>Evento:</strong> ${certificate.event}</p>
-          <p class="flex items-center"><span data-lucide="pencil" class="mr-2 text-green-700"></span><strong>Criado por:</strong> ${certificate.createdBy}</p>
-          <p class="flex items-center"><span data-lucide="calendar-check" class="mr-2 text-green-700"></span><strong>Evento:</strong> ${certificate.event}</p>
-          <p class="flex items-center"><span data-lucide="clock" class="mr-2 text-green-700"></span><strong>Timestamp:</strong> ${formattedTimestamp}</p>
+          <p class="flex items-center"><span data-lucide="user-check" class="mr-2 text-green-700"></span><strong>Criado por:</strong> ${certificate.createdBy}</p>
+          <p class="flex items-center"><span data-lucide="clock" class="mr-2 text-green-700"></span><strong>Data de criação:</strong> ${formattedTimestamp}</p>
         `;
         showModal();
         resultSection.classList.remove('hidden');
