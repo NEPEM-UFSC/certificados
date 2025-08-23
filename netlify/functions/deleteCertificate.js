@@ -128,12 +128,12 @@ exports.handler = async (event, context) => {
     return authResult; // Retorna o erro de autenticação/autorização
   }
 
-  const { id } = event.queryStringParameters; // Usar 'id' como parâmetro de consulta para o ID do documento
+  const id = event.pathParameters?.id;
 
   if (!id) {
     return {
       statusCode: 400,
-      body: JSON.stringify({ message: 'Missing "id" query parameter for certificate deletion' }),
+      body: JSON.stringify({ message: 'Missing certificate ID' }),
     };
   }
 
@@ -151,7 +151,7 @@ exports.handler = async (event, context) => {
     await certificateRef.delete();
     return {
       statusCode: 200,
-      body: JSON.stringify({ message: `Certificate with ID: ${id} deleted successfully` }),
+      body: JSON.stringify({ message: 'Certificate deleted successfully' }),
     };
   } catch (error) {
     console.error('Error deleting certificate:', error);

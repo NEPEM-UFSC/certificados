@@ -1,134 +1,162 @@
-const { handler } = require('../deleteCertificate');
-const admin = require('firebase-admin');
-const jwt = require('jsonwebtoken');
+// Importe o handler que você está testando.
+import { handler } from '../deleteCertificate'; 
+import { createMockEvent } from './test-utils';
+import admin from 'firebase-admin';
+import jwt from 'jsonwebtoken';
 
-interface NetlifyEvent {
-  httpMethod: string;
-  headers: { [key: string]: string };
-  body?: string;
-  queryStringParameters?: { [key: string]: string };
-  pathParameters?: { [key: string]: string };
-}
+// --- Mocks ---
+// 1. Declaramos os mocks no escopo do módulo.
+const mockDelete = jest.fn();
+const mockGet = jest.fn();
+const mockDoc = jest.fn();
+const mockCollection = jest.fn();
 
-// Mock Firebase Admin SDK
-jest.mock('firebase-admin', () => {
-  const mockFirestore = {
-    collection: jest.fn().mockReturnThis(),
-    doc: jest.fn().mockReturnThis(),
-    delete: jest.fn(),
-    get: jest.fn(() => ({
-      exists: true,
-      data: () => ({ secret: 'test-secret', isActive: true, role: 'admin' }),
-    })),
-  };
-  return {
-    initializeApp: jest.fn(),
-    credential: {
-      cert: jest.fn(),
-    },
-    firestore: jest.fn(() => mockFirestore),
-    apps: [],
-  };
-});
+// 2. Mock do Firebase Admin SDK usando INDIREÇÃO para evitar o erro de hoisting.
+// Agora, quando o código chamar admin.firestore().collection(), ele executará nossa função de mock,
+// que por sua vez chamará a variável `mockCollection` (que já terá sido inicializada).
+jest.mock('firebase-admin', () => ({
+  apps: [], 
+  initializeApp: jest.fn(),
+  credential: {
+    cert: jest.fn(),
+  },
+  firestore: () => ({
+    collection: (...args) => mockCollection(...args),
+  }),
+}));
 
-// Mock jsonwebtoken
+// Mock do jsonwebtoken (permanece igual)
 jest.mock('jsonwebtoken', () => ({
   decode: jest.fn(),
   verify: jest.fn(),
 }));
 
-describe('deleteCertificate Netlify Function', () => {
-  let mockKeyDoc: any;
-  let mockCertificateDoc: any;
+// --- Suíte de Testes ---
+describe('deleteCertificate handler', () => {
+  const mockContext = {};
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    // Limpa o estado de todos os mocks antes de cada teste.
+    // Usar mockClear() em vez de clearAllMocks() pode ser mais seguro se você tiver mocks globais.
+    mockDelete.mockClear();
+    mockGet.mockClear();
+    mockDoc.mockClear();
+    mockCollection.mockClear();
+    (jwt.decode as jest.Mock).mockClear();
+    (jwt.verify as jest.Mock).mockClear();
 
-    mockKeyDoc = {
-      exists: true,
-      data: jest.fn(() => ({ secret: 'test-secret', isActive: true, role: 'admin' })),
-    };
-    (admin.firestore().collection().doc().get as jest.Mock).mockImplementation((docId) => {
-      if (docId === 'test-key-id') {
-        return Promise.resolve(mockKeyDoc);
-      }
-      // Ensure that the default return also has a data function
-      return Promise.resolve({ exists: false, data: jest.fn(() => ({})) });
+    // 3. Configuramos a CADEIA de retornos dos mocks aqui.
+    // Isso é feito antes de cada teste, garantindo um estado limpo.
+    mockCollection.mockReturnValue({
+      doc: mockDoc,
+    });
+    mockDoc.mockReturnValue({
+      get: mockGet,
+      delete: mockDelete,
     });
 
-    mockCertificateDoc = {
+    // --- Configuração Padrão para o "Caminho Feliz" ---
+    
+    // Auth: A primeira chamada a `get()` retorna uma chave de admin válida.
+    mockGet.mockResolvedValueOnce({
       exists: true,
-      data: jest.fn(() => ({})), // Ensure data function is present
-    };
-    // The mock for doc().get() is now more robust, handling both keyDoc and other doc.get() calls.
-    // No need for a separate mock for mockCertificateDoc.
+      data: () => ({ secret: 'test-secret', isActive: true, role: 'admin' }),
+    });
 
-    (admin.firestore().collection().doc().delete as jest.Mock).mockResolvedValue({});
+    // Certificado: A segunda chamada a `get()` retorna um certificado existente.
+    mockGet.mockResolvedValueOnce({
+      exists: true,
+      data: () => ({ name: 'Test Certificate' }),
+    });
+    
+    // Deleção: A chamada a `delete()` é bem-sucedida.
+    mockDelete.mockResolvedValue({});
 
+    // JWT: Mocks padrão para o JWT.
     (jwt.decode as jest.Mock).mockReturnValue({ payload: { keyId: 'test-key-id' } });
     (jwt.verify as jest.Mock).mockReturnValue({ role: 'admin' });
   });
 
   it('should return 405 if httpMethod is not DELETE', async () => {
-    const event: NetlifyEvent = { httpMethod: 'GET', headers: {} };
-    const context = {};
-    const response = await handler(event, context);
+    const event = createMockEvent('GET', '/.netlify/functions/deleteCertificate/test-id');
+    const response = await handler(event, mockContext);
     expect(response.statusCode).toBe(405);
     expect(JSON.parse(response.body!)).toEqual({ message: 'Method Not Allowed' });
   });
 
   it('should return 401 if authentication header is missing', async () => {
-    const event: NetlifyEvent = { httpMethod: 'DELETE', headers: {} };
-    const context = {};
-    const response = await handler(event, context);
+    const event = createMockEvent('DELETE', '/.netlify/functions/deleteCertificate/test-id');
+    delete event.headers.authorization; 
+    
+    const response = await handler(event, mockContext);
     expect(response.statusCode).toBe(401);
     expect(JSON.parse(response.body!)).toEqual({ message: 'Authentication required: Missing or invalid Authorization header' });
   });
 
-  it('should return 400 if certificate ID is missing from path parameters', async () => {
-    const event: NetlifyEvent = { httpMethod: 'DELETE', headers: { authorization: 'Bearer test-token' }, queryStringParameters: {} };
-    const context = {};
-    const response = await handler(event, context);
+  it('should return 400 if certificate ID is missing from path', async () => {
+    const event = createMockEvent('DELETE', '/.netlify/functions/deleteCertificate/');
+    event.pathParameters = {}; // Simula a ausência do ID de forma mais realista
+
+    const response = await handler(event, mockContext);
     expect(response.statusCode).toBe(400);
     expect(JSON.parse(response.body!)).toEqual({ message: 'Missing certificate ID' });
   });
 
-  it('should return 403 if API key is not authorized for deletion', async () => {
-    mockKeyDoc.data = () => ({ secret: 'test-secret', isActive: true, role: 'reader' }); // Wrong role
-    const event: NetlifyEvent = { httpMethod: 'DELETE', headers: { authorization: 'Bearer test-token' }, queryStringParameters: { id: 'test-id' } };
-    const context = {};
-    const response = await handler(event, context);
+  it('should return 403 if API key does not have admin role', async () => {
+    // Sobrescrevemos apenas o mock necessário para este teste
+    mockGet.mockReset(); // Limpa os mocks do beforeEach
+    mockGet.mockResolvedValueOnce({
+      exists: true,
+      data: () => ({ role: 'user' }), // Papel não autorizado
+    });
+
+    const event = createMockEvent('DELETE', '/.netlify/functions/deleteCertificate/test-id', { id: 'test-id' });
+    const response = await handler(event, mockContext);
+
     expect(response.statusCode).toBe(403);
-    expect(JSON.parse(response.body!)).toEqual({ message: 'Forbidden: Role "reader" not authorized for this operation' });
+    expect(JSON.parse(response.body!)).toEqual({ message: 'Forbidden: Role "user" is not authorized for this operation' });
   });
 
-  it('should return 404 if certificate not found', async () => {
-    mockCertificateDoc.exists = false;
-    const event: NetlifyEvent = { httpMethod: 'DELETE', headers: { authorization: 'Bearer test-token' }, queryStringParameters: { id: 'non-existent-id' } };
-    const context = {};
-    const response = await handler(event, context);
+  it('should return 404 if certificate does not exist', async () => {
+    mockGet.mockReset();
+    // 1ª chamada (auth): OK
+    mockGet.mockResolvedValueOnce({
+        exists: true,
+        data: () => ({ role: 'admin' }),
+    });
+    // 2ª chamada (certificado): Não existe
+    mockGet.mockResolvedValueOnce({
+        exists: false,
+    });
+
+    const event = createMockEvent('DELETE', '/.netlify/functions/deleteCertificate/test-id', { id: 'test-id' });
+    const response = await handler(event, mockContext);
+
     expect(response.statusCode).toBe(404);
     expect(JSON.parse(response.body!)).toEqual({ message: 'Certificate not found' });
   });
 
-  it('should successfully delete a certificate with status 200', async () => {
-    const event: NetlifyEvent = { httpMethod: 'DELETE', headers: { authorization: 'Bearer test-token' }, queryStringParameters: { id: 'test-id' } };
-    const context = {};
-    const response = await handler(event, context);
+  it('should successfully delete a certificate and return 200', async () => {
+    const event = createMockEvent('DELETE', '/.netlify/functions/deleteCertificate/test-id', { id: 'test-id' });
+    const response = await handler(event, mockContext);
+
     expect(response.statusCode).toBe(200);
     expect(JSON.parse(response.body!)).toEqual({ message: 'Certificate deleted successfully' });
-    expect(admin.firestore().collection().doc).toHaveBeenCalledWith('test-id');
-    expect((admin.firestore().collection().doc().delete as jest.Mock)).toHaveBeenCalledTimes(1);
+    
+    // As verificações agora são mais limpas e diretas
+    expect(mockCollection).toHaveBeenCalledWith('certificates');
+    expect(mockDoc).toHaveBeenCalledWith('test-id');
+    expect(mockDelete).toHaveBeenCalledTimes(1);
   });
 
   it('should return 500 if Firestore delete operation fails', async () => {
-    (admin.firestore().collection().doc().delete as jest.Mock).mockRejectedValue(new Error('Firestore delete error'));
-    const event: NetlifyEvent = { httpMethod: 'DELETE', headers: { authorization: 'Bearer test-token' }, queryStringParameters: { id: 'test-id' } };
-    const context = {};
-    const response = await handler(event, context);
+    // Sobrescrevemos o mock de `delete` para simular um erro
+    mockDelete.mockRejectedValue(new Error('Firestore delete error'));
+
+    const event = createMockEvent('DELETE', '/.netlify/functions/deleteCertificate/test-id', { id: 'test-id' });
+    const response = await handler(event, mockContext);
+
     expect(response.statusCode).toBe(500);
     expect(JSON.parse(response.body!).message).toContain('Internal Server Error');
   });
 });
-
-export {};
