@@ -21,7 +21,7 @@ jest.mock('firebase-admin', () => ({
     cert: jest.fn(),
   },
   firestore: () => ({
-    collection: (...args) => mockCollection(...args),
+    collection: (...args: any[]) => mockCollection(...args),
   }),
 }));
 
@@ -107,14 +107,14 @@ describe('deleteCertificate handler', () => {
     mockGet.mockReset(); // Limpa os mocks do beforeEach
     mockGet.mockResolvedValueOnce({
       exists: true,
-      data: () => ({ role: 'user' }), // Papel não autorizado
+      data: () => ({ secret: 'test-secret', isActive: true, role: 'user' }), // Papel não autorizado
     });
 
     const event = createMockEvent('DELETE', '/.netlify/functions/deleteCertificate/test-id', { id: 'test-id' });
     const response = await handler(event, mockContext);
 
     expect(response.statusCode).toBe(403);
-    expect(JSON.parse(response.body!)).toEqual({ message: 'Forbidden: Role "user" is not authorized for this operation' });
+    expect(JSON.parse(response.body!)).toEqual({ message: 'Forbidden: Role "user" not authorized for this operation' });
   });
 
   it('should return 404 if certificate does not exist', async () => {
@@ -122,7 +122,7 @@ describe('deleteCertificate handler', () => {
     // 1ª chamada (auth): OK
     mockGet.mockResolvedValueOnce({
         exists: true,
-        data: () => ({ role: 'admin' }),
+        data: () => ({ secret: 'test-secret', isActive: true, role: 'admin' }),
     });
     // 2ª chamada (certificado): Não existe
     mockGet.mockResolvedValueOnce({

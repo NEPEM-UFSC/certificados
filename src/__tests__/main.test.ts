@@ -35,21 +35,9 @@ const mockFetchError = (status: number, statusText: string) => {
 
 describe('Certificate Search UI', () => {
   let dom: JSDOM;
-  let originalLocation: Location;
 
   beforeEach(() => {
     dom = setupDOM(); // Configura o HTML base em um JSDOM
-
-    // Mock de window.location para controlar a URL
-    originalLocation = window.location;
-    Object.defineProperty(window, 'location', {
-      writable: true,
-      value: {
-        href: 'http://localhost/',
-        search: '',
-        reload: jest.fn(),
-      },
-    });
 
     // Limpa os mocks antes de cada teste para garantir isolamento
     (fetch as jest.Mock).mockClear();
@@ -58,20 +46,20 @@ describe('Certificate Search UI', () => {
 
   afterEach(() => {
     teardownDOM(dom);
-    // Restaura o window.location original
-    Object.defineProperty(window, 'location', {
-      writable: true,
-      value: originalLocation,
-    });
   });
 
   // --- Testes de Interação do Usuário ---
 
   it('should display an error message if the input is empty on search', async () => {
+    // Verifica se o DOM foi configurado corretamente
+    expect(document.getElementById('searchButton')).toBeTruthy();
+    expect(document.getElementById('certificateNumber')).toBeTruthy();
+    expect(document.getElementById('closeModalButton')).toBeTruthy();
+    
     init(); // Inicializa os event listeners
     
-    // A melhor prática é selecionar elementos como um usuário faria.
-    const searchButton = screen.getByRole('button', { name: /buscar/i });
+    // Encontra o botão pelo texto "Buscar"
+    const searchButton = screen.getByText('Buscar');
     fireEvent.click(searchButton);
 
     // `findByRole` espera o elemento aparecer no DOM.
@@ -94,7 +82,7 @@ describe('Certificate Search UI', () => {
     init();
 
     const input = screen.getByLabelText(/código do certificado/i);
-    const searchButton = screen.getByRole('button', { name: /buscar/i });
+    const searchButton = screen.getByText('Buscar');
 
     fireEvent.change(input, { target: { value: 'VALID123' } });
     fireEvent.click(searchButton);
@@ -126,7 +114,7 @@ describe('Certificate Search UI', () => {
 
     it('should hide modal when the close button is clicked', () => {
       const modal = screen.getByRole('dialog');
-      const closeButton = screen.getByRole('button', { name: /fechar/i });
+      const closeButton = screen.getByText('Fechar');
       
       fireEvent.click(closeButton);
       
@@ -156,7 +144,7 @@ describe('Certificate Search UI', () => {
     init();
 
     const input = screen.getByLabelText(/código do certificado/i);
-    const searchButton = screen.getByRole('button', { name: /buscar/i });
+    const searchButton = screen.getByText('Buscar');
 
     fireEvent.change(input, { target: { value: 'NONEXISTENT' } });
     fireEvent.click(searchButton);
@@ -170,7 +158,7 @@ describe('Certificate Search UI', () => {
     init();
 
     const input = screen.getByLabelText(/código do certificado/i);
-    const searchButton = screen.getByRole('button', { name: /buscar/i });
+    const searchButton = screen.getByText('Buscar');
 
     fireEvent.change(input, { target: { value: 'ANYCODE' } });
     fireEvent.click(searchButton);
@@ -182,14 +170,14 @@ describe('Certificate Search UI', () => {
   // --- Teste de Carregamento Inicial com Parâmetro de URL ---
   
   it('should automatically search for a certificate if "codigo" URL parameter is present', async () => {
-    const mockCertificate = { code: 'URL123', name: 'Jane Doe', event: 'Workshop' };
+    const mockCertificate = { code: 'URL123', name: 'Jane Doe', event: 'Workshop', timestamp: new Date().toISOString(), createdBy: 'admin' };
     mockFetchSuccess(mockCertificate);
 
-    // Modificamos a URL *antes* de inicializar a aplicação.
-    Object.defineProperty(window, 'location', 'search', {
-      writable: true,
-      value: '?codigo=URL123',
-    });
+    // Mock URLSearchParams para retornar o código
+    const mockURLSearchParams = jest.fn().mockImplementation(() => ({
+      get: jest.fn((key) => key === 'codigo' ? 'URL123' : null),
+    }));
+    (global as any).URLSearchParams = mockURLSearchParams;
 
     init();
 

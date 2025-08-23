@@ -29,6 +29,9 @@ module.exports = {
       transformIgnorePatterns: [
         "node_modules/(?!(whatwg-fetch)/)"
       ],
+      moduleNameMapper: {
+        '\\.(css|less|scss|sass)$': 'identity-obj-proxy',
+      },
       testEnvironmentOptions: {
         url: 'http://localhost/',
       },

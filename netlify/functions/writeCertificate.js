@@ -138,18 +138,37 @@ exports.handler = async (event, context) => {
     };
   }
 
-  if (!certificateData || Object.keys(certificateData).length === 0) {
+  // Validação de dados obrigatórios
+  if (!certificateData || !certificateData.code || !certificateData.name || !certificateData.event) {
     return {
       statusCode: 400,
-      body: JSON.stringify({ message: 'Missing certificate data in request body' }),
+      body: JSON.stringify({ message: 'Missing required certificate data in request body' }),
     };
   }
 
   try {
-    const docRef = await db.collection('certificates').add(certificateData);
+    // Verificar se já existe um certificado com o mesmo código
+    const existingCertificate = await db.collection('certificates').doc(certificateData.code).get();
+    if (existingCertificate.exists) {
+      return {
+        statusCode: 409,
+        body: JSON.stringify({ message: 'Certificate with this code already exists' }),
+      };
+    }
+
+    // Adicionar timestamp e informações adicionais
+    const certificateWithTimestamp = {
+      ...certificateData,
+      timestamp: new Date().toISOString(),
+      createdBy: authResult.keyId,
+    };
+
+    // Criar certificado usando o código como ID do documento
+    await db.collection('certificates').doc(certificateData.code).set(certificateWithTimestamp);
+    
     return {
       statusCode: 201,
-      body: JSON.stringify({ message: 'Certificate created successfully', id: docRef.id }),
+      body: JSON.stringify({ message: 'Certificate created successfully', id: certificateData.code }),
     };
   } catch (error) {
     console.error('Error writing certificate:', error);

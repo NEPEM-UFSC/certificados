@@ -7,7 +7,7 @@ import admin from 'firebase-admin';
 
 // 1. Declaramos mocks nomeados para cada função na cadeia de chamadas do Firestore.
 const mockGet = jest.fn();
-const mockWhere = jest.fn();
+const mockDoc = jest.fn();
 const mockCollection = jest.fn();
 
 // 2. Mock do Firebase Admin SDK usando INDIREÇÃO para evitar erros de hoisting.
@@ -19,7 +19,7 @@ jest.mock('firebase-admin', () => ({
     cert: jest.fn(),
   },
   firestore: () => ({
-    collection: (...args) => mockCollection(...args),
+    collection: (...args: any[]) => mockCollection(...args),
   }),
 }));
 
@@ -31,15 +31,15 @@ describe('getCertificate handler', () => {
   beforeEach(() => {
     // Limpa o estado de todos os mocks para garantir o isolamento dos testes.
     mockGet.mockClear();
-    mockWhere.mockClear();
+    mockDoc.mockClear();
     mockCollection.mockClear();
 
     // 3. Configuramos a CADEIA de retornos dos mocks.
-    // Isso simula o comportamento fluente do SDK do Firestore (collection(...).where(...).get()).
+    // Isso simula o comportamento do SDK do Firestore (collection(...).doc(...).get()).
     mockCollection.mockReturnValue({
-      where: mockWhere,
+      doc: mockDoc,
     });
-    mockWhere.mockReturnValue({
+    mockDoc.mockReturnValue({
       get: mockGet,
     });
 
@@ -54,11 +54,9 @@ describe('getCertificate handler', () => {
     };
     
     mockGet.mockResolvedValue({
-      empty: false,
-      docs: [{
-        id: 'cert123',
-        data: () => mockCertificateData,
-      }],
+      exists: true,
+      id: 'cert123',
+      data: () => mockCertificateData,
     });
   });
 
@@ -70,17 +68,17 @@ describe('getCertificate handler', () => {
   });
 
   it('should return 400 if "code" query parameter is missing', async () => {
-    const event = createMockEvent('GET', '/.netlify/functions/getCertificate');
+    const event = createMockEvent('GET', '/.netlify/functions/getCertificate', undefined, undefined, {});
     const response = await handler(event, mockContext);
     expect(response.statusCode).toBe(400);
     expect(JSON.parse(response.body)).toEqual({ message: 'Missing "code" query parameter' });
   });
 
   it('should return 404 if certificate is not found', async () => {
-    // Sobrescrevemos o mock de `get` para simular uma query sem resultados.
-    mockGet.mockResolvedValue({ empty: true, docs: [] });
+    // Sobrescrevemos o mock de `get` para simular um documento que não existe.
+    mockGet.mockResolvedValue({ exists: false });
 
-    const event = createMockEvent('GET', '/.netlify/functions/getCertificate', { code: 'nonexistent' });
+    const event = createMockEvent('GET', '/.netlify/functions/getCertificate', undefined, undefined, { code: 'nonexistent' });
     const response = await handler(event, mockContext);
     
     expect(response.statusCode).toBe(404);
@@ -88,7 +86,7 @@ describe('getCertificate handler', () => {
   });
 
   it('should return 200 with certificate data if found', async () => {
-    const event = createMockEvent('GET', '/.netlify/functions/getCertificate', { code: 'cert123' });
+    const event = createMockEvent('GET', '/.netlify/functions/getCertificate', undefined, undefined, { code: 'cert123' });
     const response = await handler(event, mockContext);
     
     expect(response.statusCode).toBe(200);
@@ -97,7 +95,7 @@ describe('getCertificate handler', () => {
     // Asserção Aprimorada: Verificamos se a query ao banco de dados foi feita corretamente.
     // Isso garante que a lógica de busca está correta, não apenas o resultado.
     expect(mockCollection).toHaveBeenCalledWith('certificates');
-    expect(mockWhere).toHaveBeenCalledWith('code', '==', 'cert123');
+    expect(mockDoc).toHaveBeenCalledWith('cert123');
     expect(mockGet).toHaveBeenCalledTimes(1);
 
     // Asserção Aprimorada: Usamos `toEqual` no objeto inteiro para garantir
@@ -117,7 +115,7 @@ describe('getCertificate handler', () => {
     const firestoreError = new Error('Firestore query failed');
     mockGet.mockRejectedValue(firestoreError);
 
-    const event = createMockEvent('GET', '/.netlify/functions/getCertificate', { code: 'any-code' });
+    const event = createMockEvent('GET', '/.netlify/functions/getCertificate', undefined, undefined, { code: 'any-code' });
     const response = await handler(event, mockContext);
 
     expect(response.statusCode).toBe(500);

@@ -11,6 +11,7 @@ const mockSet = jest.fn();
 const mockGet = jest.fn();
 const mockDoc = jest.fn();
 const mockCollection = jest.fn();
+const mockAdd = jest.fn();
 
 // 2. Mock do Firebase Admin SDK usando INDIREÇÃO para evitar erros de hoisting.
 jest.mock('firebase-admin', () => ({
@@ -20,7 +21,7 @@ jest.mock('firebase-admin', () => ({
     cert: jest.fn(),
   },
   firestore: () => ({
-    collection: (...args) => mockCollection(...args),
+    collection: (...args: any[]) => mockCollection(...args),
   }),
 }));
 
@@ -41,12 +42,14 @@ describe('writeCertificate handler', () => {
     mockGet.mockClear();
     mockDoc.mockClear();
     mockCollection.mockClear();
+    mockAdd.mockClear();
     (jwt.decode as jest.Mock).mockClear();
     (jwt.verify as jest.Mock).mockClear();
 
     // 3. Configuramos a CADEIA de retornos dos mocks.
     mockCollection.mockReturnValue({
       doc: mockDoc,
+      add: mockAdd,
     });
     mockDoc.mockReturnValue({
       get: mockGet,
@@ -56,19 +59,10 @@ describe('writeCertificate handler', () => {
     // --- Configuração Padrão para o "Caminho Feliz" ---
     
     // Auth: A primeira chamada a `get()` (para a coleção 'keys') retorna um admin válido.
-    mockGet.mockResolvedValueOnce({
+    mockGet.mockResolvedValue({
       exists: true,
       data: () => ({ secret: 'test-secret', isActive: true, role: 'admin' }),
     });
-
-    // Verificação de Conflito: A segunda chamada a `get()` (para 'certificates')
-    // retorna que o documento NÃO existe, permitindo a criação.
-    mockGet.mockResolvedValueOnce({
-      exists: false,
-    });
-    
-    // Escrita: A chamada a `set()` é bem-sucedida.
-    mockSet.mockResolvedValue({});
 
     // JWT: Mocks padrão para autenticação.
     (jwt.decode as jest.Mock).mockReturnValue({ payload: { keyId: 'test-key-id' } });
@@ -91,14 +85,14 @@ describe('writeCertificate handler', () => {
   });
 
   it('should return 400 if body is invalid JSON', async () => {
-    const event = createMockEvent('POST', '/.netlify/functions/writeCertificate', 'invalid json');
+    const event = createMockEvent('POST', '/.netlify/functions/writeCertificate', undefined, 'invalid json');
     const response = await handler(event, mockContext);
     expect(response.statusCode).toBe(400);
     expect(JSON.parse(response.body!).message).toContain('Invalid JSON body');
   });
 
   it('should return 400 if required certificate data is missing', async () => {
-    const event = createMockEvent('POST', '/.netlify/functions/writeCertificate', { name: 'Only name provided' }); // Body incompleto
+    const event = createMockEvent('POST', '/.netlify/functions/writeCertificate', undefined, { name: 'Only name provided' }); // Body incompleto
     const response = await handler(event, mockContext);
     expect(response.statusCode).toBe(400);
     expect(JSON.parse(response.body!)).toEqual({ message: 'Missing required certificate data in request body' });
@@ -109,32 +103,31 @@ describe('writeCertificate handler', () => {
     mockGet.mockReset();
     mockGet.mockResolvedValueOnce({
       exists: true,
-      data: () => ({ role: 'reader' }), // Papel não autorizado
+      data: () => ({ secret: 'test-secret', isActive: true, role: 'reader' }), // Papel não autorizado
     });
     
     const certificateData = { code: 'NEW123', name: 'Test User', event: 'Test Event' };
-    const event = createMockEvent('POST', '/.netlify/functions/writeCertificate', certificateData);
+    const event = createMockEvent('POST', '/.netlify/functions/writeCertificate', undefined, certificateData);
     const response = await handler(event, mockContext);
     
     expect(response.statusCode).toBe(403);
-    expect(JSON.parse(response.body!).message).toContain('Forbidden: Role "reader" is not authorized for this operation');
+    expect(JSON.parse(response.body!).message).toContain('Forbidden: Role "reader" not authorized for this operation');
   });
 
   it('should return 409 if certificate with the same code already exists', async () => {
-    // Sobrescrevemos o mock de verificação de conflito.
-    mockGet.mockReset();
-    // 1ª chamada (auth): OK
+    // Mock da primeira chamada (auth)
     mockGet.mockResolvedValueOnce({
       exists: true,
-      data: () => ({ role: 'admin' }),
+      data: () => ({ secret: 'test-secret', isActive: true, role: 'admin' }),
     });
-    // 2ª chamada (verificação de certificado): JÁ EXISTE
+    
+    // Mock da segunda chamada (verificação se certificado já existe)
     mockGet.mockResolvedValueOnce({
-      exists: true,
+      exists: true, // Certificado já existe
     });
 
     const certificateData = { code: 'EXISTING123', name: 'Test User', event: 'Test Event' };
-    const event = createMockEvent('POST', '/.netlify/functions/writeCertificate', certificateData);
+    const event = createMockEvent('POST', '/.netlify/functions/writeCertificate', undefined, certificateData);
     const response = await handler(event, mockContext);
 
     expect(response.statusCode).toBe(409);
@@ -142,11 +135,22 @@ describe('writeCertificate handler', () => {
   });
 
   it('should return 500 if Firestore write operation fails', async () => {
+    // Mock da primeira chamada (auth)
+    mockGet.mockResolvedValueOnce({
+      exists: true,
+      data: () => ({ secret: 'test-secret', isActive: true, role: 'admin' }),
+    });
+    
+    // Mock da segunda chamada (verificação se certificado já existe)
+    mockGet.mockResolvedValueOnce({
+      exists: false, // Certificado não existe
+    });
+
     // Sobrescrevemos o mock da operação de escrita para simular um erro.
     mockSet.mockRejectedValue(new Error('Firestore write error'));
 
     const certificateData = { code: 'FAIL123', name: 'Test User', event: 'Test Event' };
-    const event = createMockEvent('POST', '/.netlify/functions/writeCertificate', certificateData);
+    const event = createMockEvent('POST', '/.netlify/functions/writeCertificate', undefined, certificateData);
     const response = await handler(event, mockContext);
 
     expect(response.statusCode).toBe(500);
@@ -154,8 +158,22 @@ describe('writeCertificate handler', () => {
   });
 
   it('should successfully write a new certificate and return 201', async () => {
+    // Mock da primeira chamada (auth)
+    mockGet.mockResolvedValueOnce({
+      exists: true,
+      data: () => ({ secret: 'test-secret', isActive: true, role: 'admin' }),
+    });
+    
+    // Mock da segunda chamada (verificação se certificado já existe)
+    mockGet.mockResolvedValueOnce({
+      exists: false, // Certificado não existe
+    });
+
+    // Mock da operação de escrita
+    mockSet.mockResolvedValue({});
+
     const certificateData = { code: 'NEW123', name: 'Test User', event: 'Test Event' };
-    const event = createMockEvent('POST', '/.netlify/functions/writeCertificate', certificateData);
+    const event = createMockEvent('POST', '/.netlify/functions/writeCertificate', undefined, certificateData);
     const response = await handler(event, mockContext);
 
     expect(response.statusCode).toBe(201);
@@ -172,6 +190,7 @@ describe('writeCertificate handler', () => {
     expect(mockSet).toHaveBeenCalledWith(expect.objectContaining({
       ...certificateData,
       timestamp: expect.any(String),
+      createdBy: 'test-key-id',
     }));
   });
 });

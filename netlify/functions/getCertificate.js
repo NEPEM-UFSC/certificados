@@ -42,21 +42,21 @@ exports.handler = async (event, context) => {
   }
 
   try {
-    const certificatesQuery = await db.collection('certificates').where('code', '==', code).get(); // Buscar pelo campo 'code'
+    // Buscar diretamente pelo ID do documento (que é o código do certificado)
+    const certificateDoc = await db.collection('certificates').doc(code).get();
 
-    if (certificatesQuery.empty) { // Verificar se a consulta retornou resultados
+    if (!certificateDoc.exists) {
       return {
         statusCode: 404,
         body: JSON.stringify({ message: 'Certificate not found' }),
       };
     }
 
-    const certificateDoc = certificatesQuery.docs[0]; // Pegar o primeiro documento correspondente
-    const certificateData = certificateDoc.data(); // Obter os dados do documento
+    const certificateData = certificateDoc.data();
 
     return {
       statusCode: 200,
-      body: JSON.stringify({ id: certificateDoc.id, ...certificateData }), // Incluir o ID do documento no retorno
+      body: JSON.stringify({ id: certificateDoc.id, ...certificateData }),
     };
   } catch (error) {
     console.error('Error fetching certificate:', error);
