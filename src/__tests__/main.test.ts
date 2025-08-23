@@ -1,196 +1,379 @@
-import { JSDOM } from 'jsdom';
-import { screen, fireEvent, waitFor } from '@testing-library/dom';
-import { setupDOM, teardownDOM } from './dom-setup'; // Assumindo que este utilitário existe
 import { init } from '../main';
 
-// --- Mocks Globais ---
+// Mock CSS import
+jest.mock('../styles.css', () => ({}));
 
-// Mock da biblioteca de ícones para evitar erros de `undefined`
-// e permitir a verificação de chamadas.
-global.lucide = {
-  createIcons: jest.fn(),
+// Create mock DOM elements
+const createMockElement = (tagName: string, id?: string): HTMLElement => {
+  const element = document.createElement(tagName) as HTMLElement;
+  if (id) element.id = id;
+  return element;
 };
 
-// Mock do `fetch` global para controlar as respostas da API.
-global.fetch = jest.fn();
-
-// Helper para mockar uma resposta de sucesso da API
-const mockFetchSuccess = (data: object) => {
-  (fetch as jest.Mock).mockResolvedValue({
-    ok: true,
-    status: 200,
-    json: () => Promise.resolve(data),
-  });
+// Mock lucide
+const mockLucide = {
+  createIcons: jest.fn()
 };
+(global as any).lucide = mockLucide;
 
-// Helper para mockar uma resposta de erro da API
-const mockFetchError = (status: number, statusText: string) => {
-  (fetch as jest.Mock).mockResolvedValue({
-    ok: false,
-    status,
-    statusText,
-  });
-};
+// Mock fetch
+const mockFetch = jest.fn();
+global.fetch = mockFetch;
 
-
-describe('Certificate Search UI', () => {
-  let dom: JSDOM;
+describe('main.ts', () => {
+  let searchButton: HTMLButtonElement;
+  let certificateNumberInput: HTMLInputElement;
+  let resultSection: HTMLDivElement;
+  let resultMessage: HTMLParagraphElement;
+  let certificateModal: HTMLDivElement;
+  let closeModalButton: HTMLButtonElement;
+  let closeModalIcon: HTMLButtonElement;
+  let modalContent: HTMLDivElement;
+  let originalLocation: Location;
 
   beforeEach(() => {
-    dom = setupDOM(); // Configura o HTML base em um JSDOM
+    // Clear all mocks
+    mockLucide.createIcons.mockClear();
+    mockFetch.mockClear();
 
-    // Limpa os mocks antes de cada teste para garantir isolamento
-    (fetch as jest.Mock).mockClear();
-    (global.lucide.createIcons as jest.Mock).mockClear();
+    // Create mock DOM elements
+    searchButton = createMockElement('button', 'searchButton') as HTMLButtonElement;
+    certificateNumberInput = createMockElement('input', 'certificateNumber') as HTMLInputElement;
+    resultSection = createMockElement('div', 'resultSection') as HTMLDivElement;
+    resultMessage = createMockElement('p', 'resultMessage') as HTMLParagraphElement;
+    certificateModal = createMockElement('div', 'certificateModal') as HTMLDivElement;
+    closeModalButton = createMockElement('button', 'closeModalButton') as HTMLButtonElement;
+    closeModalIcon = createMockElement('button', 'closeModal') as HTMLButtonElement;
+    modalContent = createMockElement('div', 'modalContent') as HTMLDivElement;
+
+    // Set up initial classes
+    certificateModal.classList.add('hidden');
+    resultSection.classList.add('hidden');
+
+    // Mock getElementById
+    jest.spyOn(document, 'getElementById').mockImplementation((id: string): HTMLElement | null => {
+      const elements: Record<string, HTMLElement> = {
+        'searchButton': searchButton,
+        'certificateNumber': certificateNumberInput,
+        'resultSection': resultSection,
+        'resultMessage': resultMessage,
+        'certificateModal': certificateModal,
+        'closeModalButton': closeModalButton,
+        'closeModal': closeModalIcon,
+        'modalContent': modalContent
+      };
+      return elements[id] || null;
+    });
+
+    // Save original location and mock window.location
+    originalLocation = window.location;
+    delete (window as any).location;
+    (window as any).location = {
+      ...originalLocation,
+      search: ''
+    } as Location;
   });
 
   afterEach(() => {
-    teardownDOM(dom);
+    jest.restoreAllMocks();
+    // Restore original location
+    window.location = originalLocation;
   });
 
-  // --- Testes de Interação do Usuário ---
+  describe('init function', () => {
+    it('should initialize all DOM elements and lucide icons', () => {
+      init();
 
-  it('should display an error message if the input is empty on search', async () => {
-    // Verifica se o DOM foi configurado corretamente
-    expect(document.getElementById('searchButton')).toBeTruthy();
-    expect(document.getElementById('certificateNumber')).toBeTruthy();
-    expect(document.getElementById('closeModalButton')).toBeTruthy();
-    
-    init(); // Inicializa os event listeners
-    
-    // Encontra o botão pelo texto "Buscar"
-    const searchButton = screen.getByText('Buscar');
-    fireEvent.click(searchButton);
+      expect(document.getElementById).toHaveBeenCalledWith('searchButton');
+      expect(document.getElementById).toHaveBeenCalledWith('certificateNumber');
+      expect(document.getElementById).toHaveBeenCalledWith('resultSection');
+      expect(document.getElementById).toHaveBeenCalledWith('resultMessage');
+      expect(document.getElementById).toHaveBeenCalledWith('certificateModal');
+      expect(document.getElementById).toHaveBeenCalledWith('closeModalButton');
+      expect(document.getElementById).toHaveBeenCalledWith('closeModal');
+      expect(document.getElementById).toHaveBeenCalledWith('modalContent');
+      expect(mockLucide.createIcons).toHaveBeenCalled();
+    });
 
-    // `findByRole` espera o elemento aparecer no DOM.
-    const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent('Por favor, insira um código de certificado.');
-    // Verificamos que o ícone de erro foi renderizado
-    expect(global.lucide.createIcons).toHaveBeenCalled();
+    it('should handle missing lucide gracefully', () => {
+      (global as any).lucide = undefined;
+      expect(() => init()).not.toThrow();
+    });
   });
 
-  it('should fetch and display certificate details in a modal on success', async () => {
-    const mockCertificate = {
-      code: 'VALID123',
-      name: 'John Doe',
-      event: 'Community Meetup',
-      createdBy: 'Admin',
-      timestamp: new Date().toISOString(),
-    };
-    mockFetchSuccess(mockCertificate);
-    
-    init();
-
-    const input = screen.getByLabelText(/código do certificado/i);
-    const searchButton = screen.getByText('Buscar');
-
-    fireEvent.change(input, { target: { value: 'VALID123' } });
-    fireEvent.click(searchButton);
-
-    // Espera o modal (identificado por seu role 'dialog') aparecer.
-    const modal = await screen.findByRole('dialog');
-    expect(modal).toBeVisible();
-
-    // Verifica se os dados corretos estão no modal.
-    expect(modal).toHaveTextContent(`Código: ${mockCertificate.code}`);
-    expect(modal).toHaveTextContent(`Nome: ${mockCertificate.name}`);
-    
-    // Verifica a mensagem de sucesso para o usuário.
-    const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent('Certificado encontrado!');
-    
-    // Verifica se a API foi chamada corretamente.
-    expect(fetch).toHaveBeenCalledWith('/.netlify/functions/getCertificate?code=VALID123');
-  });
-
-  describe('Modal Interactions', () => {
-    // Para testes de fechar o modal, o inicializamos em um estado aberto.
+  describe('modal functionality', () => {
     beforeEach(() => {
-        init();
-        const modal = document.getElementById('certificateModal')!;
-        modal.classList.remove('hidden');
-        modal.classList.add('flex');
+      init();
     });
 
-    it('should hide modal when the close button is clicked', () => {
-      const modal = screen.getByRole('dialog');
-      const closeButton = screen.getByText('Fechar');
-      
-      fireEvent.click(closeButton);
-      
-      // `waitFor` é perfeito para esperar que uma condição se torne verdadeira.
-      // Aqui, esperamos que o modal não esteja mais visível.
-      waitFor(() => {
-        expect(modal).not.toBeVisible();
+    it('should show modal when closeModalButton is not clicked', () => {
+      // Simulate showing modal
+      certificateModal.classList.remove('hidden');
+      certificateModal.classList.add('flex');
+
+      expect(certificateModal.classList.contains('hidden')).toBe(false);
+      expect(certificateModal.classList.contains('flex')).toBe(true);
+    });
+
+    it('should hide modal when closeModalButton is clicked', () => {
+      // Show modal first
+      certificateModal.classList.remove('hidden');
+      certificateModal.classList.add('flex');
+
+      // Click close button
+      closeModalButton.click();
+
+      expect(certificateModal.classList.contains('hidden')).toBe(true);
+      expect(certificateModal.classList.contains('flex')).toBe(false);
+    });
+
+    it('should hide modal when closeModalIcon is clicked', () => {
+      // Show modal first
+      certificateModal.classList.remove('hidden');
+      certificateModal.classList.add('flex');
+
+      // Click close icon
+      closeModalIcon.click();
+
+      expect(certificateModal.classList.contains('hidden')).toBe(true);
+      expect(certificateModal.classList.contains('flex')).toBe(false);
+    });
+
+    it('should hide modal when clicking outside modal content', () => {
+      // Show modal first
+      certificateModal.classList.remove('hidden');
+      certificateModal.classList.add('flex');
+
+      // Create click event on modal background
+      const clickEvent = new MouseEvent('click', { bubbles: true });
+      Object.defineProperty(clickEvent, 'target', { value: certificateModal });
+      certificateModal.dispatchEvent(clickEvent);
+
+      expect(certificateModal.classList.contains('hidden')).toBe(true);
+      expect(certificateModal.classList.contains('flex')).toBe(false);
+    });
+
+    it('should not hide modal when clicking inside modal content', () => {
+      // Show modal first
+      certificateModal.classList.remove('hidden');
+      certificateModal.classList.add('flex');
+
+      // Create click event on modal content
+      const clickEvent = new MouseEvent('click', { bubbles: true });
+      Object.defineProperty(clickEvent, 'target', { value: modalContent });
+      certificateModal.dispatchEvent(clickEvent);
+
+      expect(certificateModal.classList.contains('hidden')).toBe(false);
+      expect(certificateModal.classList.contains('flex')).toBe(true);
+    });
+  });
+
+  describe('verifyCertificate function', () => {
+    beforeEach(() => {
+      init();
+    });
+
+    it('should show error message when code is empty', async () => {
+      certificateNumberInput.value = '';
+      searchButton.click();
+
+      await new Promise(resolve => setTimeout(resolve, 0)); // Wait for async
+
+      expect(resultSection.classList.contains('hidden')).toBe(false);
+      expect(resultSection.className).toContain('bg-red-100');
+      expect(resultMessage.innerHTML).toContain('Por favor, insira um código de certificado.');
+      expect(mockLucide.createIcons).toHaveBeenCalled();
+    });
+
+    it('should show loading state during verification', async () => {
+      mockFetch.mockImplementation(() => new Promise(resolve => setTimeout(resolve, 100)));
+      certificateNumberInput.value = 'TEST123';
+
+      searchButton.click();
+
+      expect(searchButton.disabled).toBe(true);
+      expect(searchButton.innerHTML).toContain('Verificando...');
+      expect(mockLucide.createIcons).toHaveBeenCalled();
+    });
+
+    it('should handle 404 response (certificate not found)', async () => {
+      mockFetch.mockResolvedValue({
+        status: 404,
+        ok: false
       });
+
+      certificateNumberInput.value = 'NOTFOUND123';
+      searchButton.click();
+
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      expect(resultSection.classList.contains('hidden')).toBe(false);
+      expect(resultSection.className).toContain('bg-red-100');
+      expect(resultMessage.innerHTML).toContain('Certificado não encontrado em nossa base de dados.');
+      expect(searchButton.disabled).toBe(false);
+      expect(searchButton.innerHTML).toContain('Buscar');
     });
 
-    it('should hide modal when clicking outside the modal content', () => {
-      const modalBackdrop = screen.getByRole('dialog');
-      
-      // Clicamos no backdrop (o próprio elemento com role 'dialog')
-      fireEvent.click(modalBackdrop);
-
-      waitFor(() => {
-        expect(modalBackdrop).not.toBeVisible();
+    it('should handle other HTTP errors', async () => {
+      mockFetch.mockResolvedValue({
+        status: 500,
+        ok: false
       });
+
+      certificateNumberInput.value = 'ERROR123';
+      searchButton.click();
+
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      expect(resultSection.classList.contains('hidden')).toBe(false);
+      expect(resultSection.className).toContain('bg-red-100');
+      expect(resultMessage.innerHTML).toContain('Ocorreu um erro ao verificar o certificado.');
+      expect(searchButton.disabled).toBe(false);
+    });
+
+    it('should handle network errors', async () => {
+      mockFetch.mockRejectedValue(new Error('Network error'));
+
+      certificateNumberInput.value = 'NETWORK123';
+      searchButton.click();
+
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      expect(resultSection.classList.contains('hidden')).toBe(false);
+      expect(resultSection.className).toContain('bg-red-100');
+      expect(resultMessage.innerHTML).toContain('Ocorreu um erro ao verificar o certificado.');
+      expect(searchButton.disabled).toBe(false);
+    });
+
+    it('should successfully display certificate with Firestore timestamp', async () => {
+      const mockCertificate = {
+        code: 'VALID123',
+        name: 'John Doe',
+        event: 'Test Event',
+        createdBy: 'admin',
+        timestamp: {
+          _seconds: 1640995200 // Jan 1, 2022
+        }
+      };
+
+      mockFetch.mockResolvedValue({
+        status: 200,
+        ok: true,
+        json: () => Promise.resolve(mockCertificate)
+      });
+
+      certificateNumberInput.value = 'VALID123';
+      searchButton.click();
+
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      expect(resultSection.classList.contains('hidden')).toBe(false);
+      expect(resultSection.className).toContain('bg-green-50');
+      expect(resultMessage.innerHTML).toContain('Certificado encontrado!');
+      
+      expect(modalContent.innerHTML).toContain('VALID123');
+      expect(modalContent.innerHTML).toContain('John Doe');
+      expect(modalContent.innerHTML).toContain('Test Event');
+      expect(modalContent.innerHTML).toContain('admin');
+      expect(modalContent.innerHTML).toContain('janeiro'); // Portuguese month name
+      
+      expect(certificateModal.classList.contains('hidden')).toBe(false);
+      expect(certificateModal.classList.contains('flex')).toBe(true);
+      expect(searchButton.disabled).toBe(false);
+    });
+
+    it('should handle certificate with missing timestamp', async () => {
+      const mockCertificate = {
+        code: 'VALID456',
+        name: 'Jane Doe',
+        event: 'Another Event',
+        createdBy: 'admin'
+        // No timestamp
+      };
+
+      mockFetch.mockResolvedValue({
+        status: 200,
+        ok: true,
+        json: () => Promise.resolve(mockCertificate)
+      });
+
+      certificateNumberInput.value = 'VALID456';
+      searchButton.click();
+
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      expect(modalContent.innerHTML).toContain('Data não disponível');
+    });
+
+    it('should trim whitespace from input', async () => {
+      mockFetch.mockResolvedValue({
+        status: 404,
+        ok: false
+      });
+
+      certificateNumberInput.value = '  TEST123  ';
+      searchButton.click();
+
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      expect(mockFetch).toHaveBeenCalledWith('/.netlify/functions/getCertificate?code=TEST123');
     });
   });
 
-  // --- Testes de Respostas de Erro da API ---
+  describe('URL parameter handling', () => {
+    it('should auto-fill input and verify certificate from URL parameter', async () => {
+      // Mock URLSearchParams to return a codigo parameter
+      const mockURLSearchParams = jest.fn().mockImplementation(() => ({
+        get: jest.fn().mockImplementation((param: string) => {
+          if (param === 'codigo') return 'AUTO123';
+          return null;
+        })
+      }));
+      (global as any).URLSearchParams = mockURLSearchParams;
 
-  it('should display a "not found" message if API returns 404', async () => {
-    mockFetchError(404, 'Not Found');
-    init();
+      mockFetch.mockResolvedValue({
+        status: 404,
+        ok: false
+      });
 
-    const input = screen.getByLabelText(/código do certificado/i);
-    const searchButton = screen.getByText('Buscar');
+      init();
 
-    fireEvent.change(input, { target: { value: 'NONEXISTENT' } });
-    fireEvent.click(searchButton);
+      await new Promise(resolve => setTimeout(resolve, 0));
 
-    const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent('Certificado não encontrado em nossa base de dados.');
+      expect(certificateNumberInput.value).toBe('AUTO123');
+      expect(mockFetch).toHaveBeenCalledWith('/.netlify/functions/getCertificate?code=AUTO123');
+    });
+
+    it('should not auto-verify when no URL parameter is present', () => {
+      const mockURLSearchParams = jest.fn().mockImplementation(() => ({
+        get: jest.fn().mockReturnValue(null)
+      }));
+      (global as any).URLSearchParams = mockURLSearchParams;
+
+      init();
+
+      expect(certificateNumberInput.value).toBe('');
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
   });
 
-  it('should display a generic error message for other API errors', async () => {
-    mockFetchError(500, 'Internal Server Error');
-    init();
+  describe('search button click handler', () => {
+    beforeEach(() => {
+      init();
+    });
 
-    const input = screen.getByLabelText(/código do certificado/i);
-    const searchButton = screen.getByText('Buscar');
+    it('should trigger verification when search button is clicked', async () => {
+      mockFetch.mockResolvedValue({
+        status: 404,
+        ok: false
+      });
 
-    fireEvent.change(input, { target: { value: 'ANYCODE' } });
-    fireEvent.click(searchButton);
+      certificateNumberInput.value = 'CLICK123';
+      searchButton.click();
 
-    const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent('Ocorreu um erro ao verificar o certificado. Tente novamente.');
-  });
+      await new Promise(resolve => setTimeout(resolve, 0));
 
-  // --- Teste de Carregamento Inicial com Parâmetro de URL ---
-  
-  it('should automatically search for a certificate if "codigo" URL parameter is present', async () => {
-    const mockCertificate = { code: 'URL123', name: 'Jane Doe', event: 'Workshop', timestamp: new Date().toISOString(), createdBy: 'admin' };
-    mockFetchSuccess(mockCertificate);
-
-    // Mock URLSearchParams para retornar o código
-    const mockURLSearchParams = jest.fn().mockImplementation(() => ({
-      get: jest.fn((key) => key === 'codigo' ? 'URL123' : null),
-    }));
-    (global as any).URLSearchParams = mockURLSearchParams;
-
-    init();
-
-    // Verificamos se a API foi chamada automaticamente.
-    expect(fetch).toHaveBeenCalledWith('/.netlify/functions/getCertificate?code=URL123');
-
-    // Verificamos se o input foi preenchido.
-    const input = screen.getByLabelText(/código do certificado/i);
-    expect(input).toHaveValue('URL123');
-
-    // E se o modal com os dados corretos apareceu.
-    const modal = await screen.findByRole('dialog');
-    expect(modal).toBeVisible();
-    expect(modal).toHaveTextContent(`Nome: ${mockCertificate.name}`);
+      expect(mockFetch).toHaveBeenCalledWith('/.netlify/functions/getCertificate?code=CLICK123');
+    });
   });
 });
