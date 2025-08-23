@@ -49,15 +49,16 @@ describe('writeCertificate Netlify Function', () => {
       if (docId === 'test-key-id') {
         return Promise.resolve(mockKeyDoc);
       }
-      return Promise.resolve({ exists: false, data: jest.fn(() => ({})) }); // Default for other doc.get() calls
+      // Ensure that the default return also has a data function
+      return Promise.resolve({ exists: false, data: jest.fn(() => ({})) });
     });
 
     mockCertificateDoc = {
       exists: false, // Assume certificate does not exist by default for creation
-      data: jest.fn(() => ({})), // Add data function for consistency
+      data: jest.fn(() => ({})), // Ensure data function is present
     };
-    // This mock needs to be more specific or handled by the general mock above if it's for the same .get() call
-    // For now, let's assume the above mock handles all .get() calls for doc()
+    // The mock for doc().get() is now more robust, handling both keyDoc and other doc.get() calls.
+    // No need for a separate mock for mockCertificateDoc.
 
     (admin.firestore().collection().doc().set as jest.Mock).mockResolvedValue({});
 
