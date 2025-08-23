@@ -3,9 +3,6 @@ module.exports = {
     {
       displayName: 'netlify-functions',
       preset: 'ts-jest',
-      transform: {
-        '^.+\\.(ts|tsx|js|jsx)$': 'babel-jest',
-      },
       testEnvironment: 'node',
       testMatch: ['<rootDir>/netlify/functions/__tests__/**/*.test.ts'],
       transformIgnorePatterns: [
@@ -20,6 +17,9 @@ module.exports = {
       testMatch: ['<rootDir>/src/__tests__/**/*.test.ts'],
       moduleFileExtensions: ['ts', 'js', 'json', 'node'],
       setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],
+      transform: {
+        '^.+\\.(ts|tsx|js|jsx)$': 'babel-jest',
+      },
     },
   ],
 };
