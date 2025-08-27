@@ -43,11 +43,50 @@ tags:
 
 paths:
   /createKey:
+    get:
+      tags:
+        - Chaves de API
+      summary: Listar chaves de API
+      description: Lista todas as chaves de API existentes. Requer role de administrador.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Lista de chaves retornada com sucesso
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  keys:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/KeyInfo'
+                  total:
+                    type: integer
+                    example: 5
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
     post:
       tags:
         - Chaves de API
       summary: Criar nova chave de API
-      description: Cria uma nova chave de acesso à API. Requer role de administrador.
+      description: |
+        Cria uma nova chave de acesso à API.
+        
+        **Regras de autorização:**
+        - Chaves **reader**: Podem ser criadas com token bootstrap (chave pública para acesso inicial)
+        - Chaves **issuer/admin**: Apenas administradores podem criar
+        - **Token bootstrap**: Chave pública restrita apenas para criação de chaves reader
+        
+        **Fluxo de acesso inicial:**
+        1. Usuário usa token bootstrap para criar chave reader
+        2. Com chave reader, pode validar certificados
+        3. Para upgrade de permissões, solicita ao administrador
       security:
         - BearerAuth: []
       requestBody:
@@ -57,17 +96,254 @@ paths:
             schema:
               $ref: '#/components/schemas/CreateKeyRequest'
             examples:
+              reader_bootstrap:
+                summary: Chave reader com token bootstrap
+                description: Usando chave bootstrap pública para criar acesso inicial
+                value:
+                  role: reader
+                  isActive: true
+                  description: "Meu Terminal - Validação de Certificados"
               admin_key:
-                summary: Chave de administrador
+                summary: Chave de administrador (requer admin auth)
                 value:
                   role: admin
                   isActive: true
-                  secret: minha-chave-secreta-admin
+                  description: "Sistema Principal - Admin"
               issuer_key:
-                summary: Chave de emissor
+                summary: Chave de emissor (requer admin auth)
                 value:
                   role: issuer
                   isActive: true
+                  description: "Sistema de Eventos - Emissor"
+      responses:
+        '201':
+          description: Chave criada com sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateKeyResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /manageKey/{keyId}:
+    put:
+      tags:
+        - Chaves de API
+      summary: Atualizar chave de API
+      description: |
+        Atualiza description, role ou status de uma chave existente. Requer role de administrador.
+        
+        O identificador pode ser:
+        - ID técnico da chave
+        - Description da chave (será buscada automaticamente)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: identifier
+          in: path
+          required: true
+          description: Description ou ID da chave a ser atualizada
+          schema:
+            type: string
+          examples:
+            by_description:
+              summary: Por descrição
+              value: "Chave do Sistema de Eventos"
+            by_id:
+              summary: Por ID técnico
+              value: "abc123def456"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateKeyRequest'
+            examples:
+              change_role:
+                summary: Alterar role
+                value:
+                  role: issuer
+              change_description:
+                summary: Alterar descrição
+                value:
+                  description: "Nova descrição da chave"
+              deactivate:
+                summary: Desativar chave
+                value:
+                  isActive: false
+              full_update:
+                summary: Atualização completa
+                value:
+                  description: "Chave de Produção - Emissor Principal"
+                  role: issuer
+                  isActive: true
+      responses:
+        '200':
+          description: Chave atualizada com sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdateKeyResponse'
+        '400':
+          description: Dados inválidos ou tentativa de auto-modificação perigosa
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                self_deactivation:
+                  summary: Tentativa de auto-desativação
+                  value:
+                    message: Cannot deactivate your own admin key
+                self_role_change:
+                  summary: Tentativa de mudar próprio role admin
+                  value:
+                    message: Cannot change your own admin role
+                duplicate_description:
+                  summary: Descrição duplicada
+                  value:
+                    message: A key with this description already exists
+                invalid_description:
+                  summary: Descrição inválida
+                  value:
+                    message: Description must be a string with at least 3 characters
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Chave não encontrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Key not found. Please check the description or ID.
+        '409':
+          description: Conflito - Descrição já existe
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: A key with this description already exists
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    delete:
+      tags:
+        - Chaves de API
+      summary: Desativar chave de API
+      description: |
+        Desativa uma chave existente (não remove fisicamente). Requer role de administrador.
+        
+        O identificador pode ser a description ou ID técnico da chave.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: identifier
+          in: path
+          required: true
+          description: Description ou ID da chave a ser desativada
+          schema:
+            type: string
+          examples:
+            by_description:
+              summary: Por descrição
+              value: "Chave do Sistema de Eventos"
+            by_id:
+              summary: Por ID técnico
+              value: "abc123def456"
+      responses:
+        '200':
+          description: Chave desativada com sucesso
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Key deactivated successfully
+                  id:
+                    type: string
+                    example: abc123def456
+                  description:
+                    type: string
+                    example: Chave do Sistema de Eventos
+        '400':
+          description: Tentativa de auto-desativação
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Cannot deactivate your own admin key
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Chave não encontrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Key not found. Please check the description or ID.
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /createKey:
+    post:
+      tags:
+        - Chaves de API
+      summary: Criar nova chave de API
+      description: |
+        Cria uma nova chave de acesso à API.
+        
+        **Regras de autorização:**
+        - Chaves **reader**: Podem ser criadas com token bootstrap (chave pública para acesso inicial)
+        - Chaves **issuer/admin**: Apenas administradores podem criar
+        - **Token bootstrap**: Chave pública restrita apenas para criação de chaves reader
+        
+        **Fluxo de acesso inicial:**
+        1. Usuário usa token bootstrap para criar chave reader
+        2. Com chave reader, pode validar certificados
+        3. Para upgrade de permissões, solicita ao administrador
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateKeyRequest'
+            examples:
+              reader_bootstrap:
+                summary: Chave reader com token bootstrap
+                description: Usando chave bootstrap pública para criar acesso inicial
+                value:
+                  role: reader
+                  isActive: true
+                  description: "Meu Terminal - Validação de Certificados"
+              admin_key:
+                summary: Chave de administrador (requer admin auth)
+                value:
+                  role: admin
+                  isActive: true
+                  description: "Sistema Principal - Admin"
+              issuer_key:
+                summary: Chave de emissor (requer admin auth)
+                value:
+                  role: issuer
+                  isActive: true
+                  description: "Sistema de Eventos - Emissor"
       responses:
         '201':
           description: Chave criada com sucesso
@@ -253,6 +529,7 @@ components:
       required:
         - role
         - isActive
+        - description
       properties:
         role:
           type: string
@@ -263,10 +540,86 @@ components:
           type: boolean
           description: Se a chave está ativa
           example: true
+        description:
+          type: string
+          minLength: 3
+          description: Descrição identificadora da chave (deve ser única)
+          example: "Chave do Sistema de Eventos - Emissor Principal"
         secret:
           type: string
           description: Chave secreta para assinar JWTs (opcional - gerada automaticamente se não fornecida)
           example: minha-chave-secreta-segura
+
+    UpdateKeyRequest:
+      type: object
+      properties:
+        role:
+          type: string
+          enum: [admin, issuer, reader]
+          description: Novo role da chave
+          example: issuer
+        isActive:
+          type: boolean
+          description: Novo status de ativação
+          example: false
+        description:
+          type: string
+          minLength: 3
+          description: Nova descrição da chave (deve ser única)
+          example: "Chave Atualizada - Sistema de Certificados"
+
+    KeyInfo:
+      type: object
+      properties:
+        id:
+          type: string
+          description: ID técnico da chave
+          example: abc123def456
+        description:
+          type: string
+          description: Descrição identificadora da chave
+          example: "Chave do Sistema de Eventos - Emissor Principal"
+        role:
+          type: string
+          enum: [admin, issuer, reader]
+          description: Role da chave
+          example: issuer
+        isActive:
+          type: boolean
+          description: Se a chave está ativa
+          example: true
+        createdAt:
+          type: string
+          format: date-time
+          description: Timestamp de criação
+          example: "2024-08-15T10:30:00.000Z"
+        updatedAt:
+          type: string
+          format: date-time
+          description: Timestamp da última atualização
+          example: "2024-08-16T14:20:00.000Z"
+
+    UpdateKeyResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Key updated successfully
+        id:
+          type: string
+          description: ID da chave atualizada
+          example: abc123def456
+        description:
+          type: string
+          description: Descrição atual da chave
+          example: "Chave Atualizada - Sistema de Certificados"
+        updates:
+          type: object
+          description: Campos que foram atualizados
+          example:
+            role: issuer
+            isActive: true
+            description: "Nova descrição"
 
     CreateKeyResponse:
       type: object
@@ -278,12 +631,20 @@ components:
           type: string
           description: ID da chave criada
           example: abc123def456
+        description:
+          type: string
+          description: Descrição da chave criada
+          example: "Chave do Sistema de Eventos - Emissor Principal"
         role:
           type: string
           example: issuer
         isActive:
           type: boolean
           example: true
+        secret:
+          type: string
+          description: Chave secreta (retornada apenas na criação)
+          example: a1b2c3d4e5f6...
 
     Certificate:
       type: object
@@ -451,69 +812,39 @@ x-code-samples:
     source: |
       const jwt = require('jsonwebtoken');
       
-      // Criar token JWT
-      const token = jwt.sign(
+      // Token bootstrap para criar chave reader inicial
+      const BOOTSTRAP_SECRET = 'nepemcert-inicial-ufsc-2024'; // Chave pública
+      const bootstrapToken = jwt.sign(
         { 
-          keyId: 'sua-key-id',
+          keyId: 'nepemcert-bootstrap-2024',
           iat: Math.floor(Date.now() / 1000),
           exp: Math.floor(Date.now() / 1000) + 3600
         },
-        'sua-chave-secreta'
+        BOOTSTRAP_SECRET
       );
       
-      // Criar certificado
-      const response = await fetch('/.netlify/functions/writeCertificate', {
+      // Criar chave reader inicial (qualquer usuário pode fazer)
+      const readerResponse = await fetch('/.netlify/functions/createKey', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
+          'Authorization': `Bearer ${bootstrapToken}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          code: 'CERT-001',
-          name: 'João Silva',
-          event: 'Workshop React'
+          role: 'reader',
+          isActive: true,
+          description: 'Meu Terminal - Validação de Certificados'
         })
       });
-
-  - lang: 'Python'
-    source: |
-      import jwt
-      import requests
-      from datetime import datetime, timedelta
       
-      # Criar token JWT
-      payload = {
-          'keyId': 'sua-key-id',
-          'iat': datetime.utcnow(),
-          'exp': datetime.utcnow() + timedelta(hours=1)
-      }
-      token = jwt.encode(payload, 'sua-chave-secreta', algorithm='HS256')
+      const readerKey = await readerResponse.json();
+      console.log('Chave reader criada:', readerKey);
       
-      # Criar certificado
-      response = requests.post(
-          'https://seu-site.netlify.app/.netlify/functions/writeCertificate',
-          headers={
-              'Authorization': f'Bearer {token}',
-              'Content-Type': 'application/json'
-          },
-          json={
-              'code': 'CERT-001',
-              'name': 'João Silva',
-              'event': 'Workshop React'
-          }
-      )
-
-  - lang: 'cURL'
-    source: |
-      # Criar certificado
-      curl -X POST https://seu-site.netlify.app/.netlify/functions/writeCertificate \
-        -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
-        -H "Content-Type: application/json" \
-        -d '{
-          "code": "CERT-001",
-          "name": "João Silva",
-          "event": "Workshop React"
-        }'
+      // Agora pode validar certificados
+      const readerToken = jwt.sign(
+        { keyId: readerKey.id, iat: Math.floor(Date.now() / 1000), exp: Math.floor(Date.now() / 1000) + 86400 },
+        readerKey.secret
+      );
       
-      # Buscar certificado (público)
-      curl -X GET "https://seu-site.netlify.app/.netlify/functions/getCertificate?code=CERT-001"
+      // Buscar certificado
+      const cert = await fetch('/.netlify/functions/getCertificate?code=CERT-001');

@@ -1,639 +1,355 @@
 # Guia de Implementação - API de Certificados
 
-## Casos de Uso Comuns
+## Setup Inicial e Acesso Mínimo
 
-### 1. Fluxo Completo de Criação de Certificados
+### 1. Chave Bootstrap - Acesso Público Restrito
 
-Este exemplo demonstra como criar uma chave de API e usar para emitir certificados:
+A chave bootstrap é uma **chave pública** que permite apenas criar chaves `reader`:
 
 ```javascript
-// 1. Primeiro, criar uma chave de API (precisa de token admin)
-const adminToken = 'your-admin-jwt-token';
+const jwt = require('jsonwebtoken');
 
-async function setupAPI() {
-  // Criar chave para emissão de certificados
-  const keyResponse = await fetch('/.netlify/functions/createKey', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${adminToken}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      role: 'issuer',
-      isActive: true,
-      secret: 'minha-chave-secreta-segura-123'
-    })
-  });
-  
-  const keyData = await keyResponse.json();
-  console.log('Chave criada:', keyData.id);
-  
-  // 2. Criar JWT para a nova chave
-  const jwt = require('jsonwebtoken');
-  const issuerToken = jwt.sign(
+// Chave pública - pode ser distribuída em terminais
+const BOOTSTRAP_KEY_ID = 'nepemcert-bootstrap-2024';
+const BOOTSTRAP_SECRET = 'nepemcert-inicial-ufsc-2024'; // PÚBLICO, não é segredo
+
+function createBootstrapToken() {
+  return jwt.sign(
     { 
-      keyId: keyData.id,
+      keyId: BOOTSTRAP_KEY_ID,
       iat: Math.floor(Date.now() / 1000),
       exp: Math.floor(Date.now() / 1000) + (60 * 60 * 24) // 24 horas
     },
-    'minha-chave-secreta-segura-123'
+    BOOTSTRAP_SECRET
   );
+}
+
+// Qualquer usuário pode criar uma chave reader inicial
+async function createInitialReaderKey() {
+  const bootstrapToken = createBootstrapToken();
   
-  // 3. Criar certificados usando a nova chave
-  const certificates = [
-    {
-      code: 'WORKSHOP2024-001',
-      name: 'Maria Silva',
-      event: 'Workshop de React 2024',
-      date: '2024-08-15',
-      hours: '16',
-      description: 'Participação completa no workshop de React com certificação'
+  const response = await fetch('/.netlify/functions/createKey', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${bootstrapToken}`,
+      'Content-Type': 'application/json'
     },
-    {
-      code: 'WORKSHOP2024-002', 
-      name: 'João Santos',
-      event: 'Workshop de React 2024',
-      date: '2024-08-15',
-      hours: '16',
-      description: 'Participação completa no workshop de React com certificação'
-    }
-  ];
+    body: JSON.stringify({
+      role: 'reader',
+      isActive: true,
+      description: 'Meu Terminal de Validação - João Silva'
+    })
+  });
   
-  for (const cert of certificates) {
-    const response = await fetch('/.netlify/functions/writeCertificate', {
+  const readerKey = await response.json();
+  console.log('✅ Chave reader criada:', readerKey);
+  
+  // IMPORTANTE: Salvar credentials localmente
+  localStorage.setItem('myReaderKey', JSON.stringify({
+    id: readerKey.id,
+    secret: readerKey.secret,
+    description: readerKey.description
+  }));
+  
+  return readerKey;
+}
+```
+
+### 2. Chave Admin Inicial - Criação Manual no Firebase
+
+A primeira chave admin deve ser criada **manualmente** no Firebase:
+
+```javascript
+// Documento a ser criado manualmente na coleção 'keys' do Firestore:
+{
+  role: 'admin',
+  isActive: true,
+  description: 'Administrador Principal - NEPEM UFSC',
+  secret: 'chave-secreta-admin-muito-segura-gerada-manualmente',
+  createdAt: firestore.timestamp(), // Use o timestamp do Firebase
+  createdBy: 'manual-setup'
+}
+
+// O ID do documento será o keyId usado nos JWTs
+```
+
+### 3. Fluxo de Acesso Completo
+
+```javascript
+class CertificateAccessFlow {
+  constructor() {
+    this.baseUrl = 'https://seu-site.netlify.app/.netlify/functions';
+    this.BOOTSTRAP_SECRET = 'nepemcert-inicial-ufsc-2024'; // Público
+  }
+  
+  // Passo 1: Usuário cria chave reader (acesso inicial)
+  async createReaderAccess(userDescription) {
+    const bootstrapToken = this.createBootstrapToken();
+    
+    const response = await fetch(`${this.baseUrl}/createKey`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${issuerToken}`,
+        'Authorization': `Bearer ${bootstrapToken}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify(cert)
+      body: JSON.stringify({
+        role: 'reader',
+        isActive: true,
+        description: userDescription
+      })
     });
     
-    const result = await response.json();
-    console.log(`Certificado ${cert.code} criado:`, result);
+    const readerKey = await response.json();
+    
+    if (response.ok) {
+      console.log('✅ Acesso reader criado:', readerKey.description);
+      return readerKey;
+    } else {
+      throw new Error(`Erro ao criar acesso: ${readerKey.message}`);
+    }
+  }
+  
+  // Passo 2: Usar chave reader para validar certificados
+  async validateCertificate(readerKey, certificateCode) {
+    // Reader não precisa de auth para validar certificados (endpoint público)
+    const response = await fetch(`${this.baseUrl}/getCertificate?code=${certificateCode}`);
+    
+    if (response.ok) {
+      const certificate = await response.json();
+      console.log('✅ Certificado válido:', certificate.name);
+      return certificate;
+    } else {
+      const error = await response.json();
+      console.log('❌ Certificado não encontrado:', error.message);
+      return null;
+    }
+  }
+  
+  // Passo 3: Solicitar upgrade de permissões (processo manual)
+  displayUpgradeRequest(readerKey) {
+    console.log(`
+📧 Para solicitar upgrade de permissões, envie as seguintes informações para o administrador:
+
+Descrição da Chave: ${readerKey.description}
+ID da Chave: ${readerKey.id}
+Permissão Solicitada: issuer (para emitir certificados)
+Justificativa: [Descreva o motivo da solicitação]
+
+O administrador pode usar a função manageKey para atualizar suas permissões.
+    `);
+  }
+  
+  createBootstrapToken() {
+    return jwt.sign(
+      { 
+        keyId: 'nepemcert-bootstrap-2024',
+        iat: Math.floor(Date.now() / 1000),
+        exp: Math.floor(Date.now() / 1000) + (60 * 60 * 24)
+      },
+      this.BOOTSTRAP_SECRET
+    );
+  }
+  
+  createUserToken(keyId, secret) {
+    return jwt.sign(
+      { 
+        keyId: keyId,
+        iat: Math.floor(Date.now() / 1000),
+        exp: Math.floor(Date.now() / 1000) + (60 * 60 * 8) // 8 horas
+      },
+      secret
+    );
+  }
+}
+
+// Exemplo de uso completo
+async function newUserFlow() {
+  const flow = new CertificateAccessFlow();
+  
+  try {
+    // 1. Criar acesso inicial
+    const readerKey = await flow.createReaderAccess('Terminal João Silva - Validador UFSC');
+    
+    // 2. Validar um certificado
+    const certificate = await flow.validateCertificate(readerKey, 'WORKSHOP-2024-001');
+    
+    // 3. Se precisar de mais permissões
+    if (!certificate) {
+      console.log('Para emitir certificados, solicite upgrade:');
+      flow.displayUpgradeRequest(readerKey);
+    }
+    
+  } catch (error) {
+    console.error('Erro no fluxo:', error.message);
   }
 }
 ```
 
-### 2. Sistema de Validação de Certificados para Frontend
-
-```html
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Validador de Certificados</title>
-    <style>
-        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-        .form-group { margin-bottom: 15px; }
-        .certificate { border: 1px solid #ddd; padding: 20px; margin-top: 20px; }
-        .error { color: red; }
-        .success { color: green; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>Validador de Certificados</h1>
-        
-        <div class="form-group">
-            <label for="code">Código do Certificado:</label>
-            <input type="text" id="code" placeholder="Ex: WORKSHOP2024-001">
-            <button onclick="validateCertificate()">Validar</button>
-        </div>
-        
-        <div id="result"></div>
-    </div>
-
-    <script>
-        async function validateCertificate() {
-            const code = document.getElementById('code').value.trim();
-            const resultDiv = document.getElementById('result');
-            
-            if (!code) {
-                resultDiv.innerHTML = '<p class="error">Por favor, insira o código do certificado.</p>';
-                return;
-            }
-            
-            try {
-                const response = await fetch(`/.netlify/functions/getCertificate?code=${encodeURIComponent(code)}`);
-                const data = await response.json();
-                
-                if (response.ok) {
-                    resultDiv.innerHTML = `
-                        <div class="certificate success">
-                            <h3>✅ Certificado Válido</h3>
-                            <p><strong>Nome:</strong> ${data.name}</p>
-                            <p><strong>Evento:</strong> ${data.event}</p>
-                            <p><strong>Data:</strong> ${data.date || 'Não informada'}</p>
-                            <p><strong>Carga Horária:</strong> ${data.hours || 'Não informada'} horas</p>
-                            <p><strong>Descrição:</strong> ${data.description || 'Sem descrição'}</p>
-                            <p><strong>Emitido em:</strong> ${new Date(data.timestamp).toLocaleString('pt-BR')}</p>
-                        </div>
-                    `;
-                } else {
-                    resultDiv.innerHTML = `<p class="error">❌ ${data.message}</p>`;
-                }
-            } catch (error) {
-                resultDiv.innerHTML = `<p class="error">❌ Erro ao validar certificado: ${error.message}</p>`;
-            }
-        }
-        
-        // Permitir validação com Enter
-        document.getElementById('code').addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                validateCertificate();
-            }
-        });
-    </script>
-</body>
-</html>
-```
-
-### 3. Script Python para Importação em Massa
-
-```python
-import pandas as pd
-import requests
-import jwt
-from datetime import datetime, timedelta
-import json
-
-class CertificateBatchProcessor:
-    def __init__(self, base_url, key_id, secret):
-        self.base_url = base_url
-        self.key_id = key_id
-        self.secret = secret
-        self.token = self._create_token()
-    
-    def _create_token(self):
-        """Cria JWT token para autenticação"""
-        payload = {
-            'keyId': self.key_id,
-            'iat': datetime.utcnow(),
-            'exp': datetime.utcnow() + timedelta(hours=24)
-        }
-        return jwt.encode(payload, self.secret, algorithm='HS256')
-    
-    def process_csv(self, csv_file, event_name, event_date=None, hours=None):
-        """
-        Processa arquivo CSV e cria certificados
-        
-        CSV deve ter colunas: name, email, description (opcional)
-        """
-        df = pd.read_csv(csv_file)
-        results = []
-        
-        for index, row in df.iterrows():
-            # Gerar código único baseado no índice e timestamp
-            code = f"{event_name.upper().replace(' ', '')}-{index+1:03d}-{int(datetime.now().timestamp())}"
-            
-            certificate_data = {
-                'code': code,
-                'name': row['name'],
-                'event': event_name,
-                'date': event_date,
-                'hours': hours,
-                'description': row.get('description', f'Participação no evento {event_name}')
-            }
-            
-            try:
-                result = self._create_certificate(certificate_data)
-                results.append({
-                    'code': code,
-                    'name': row['name'],
-                    'status': 'success',
-                    'message': result.get('message', 'Created successfully')
-                })
-                print(f"✅ Certificado criado para {row['name']}: {code}")
-                
-            except Exception as e:
-                results.append({
-                    'code': code,
-                    'name': row['name'],
-                    'status': 'error',
-                    'message': str(e)
-                })
-                print(f"❌ Erro ao criar certificado para {row['name']}: {e}")
-        
-        # Salvar relatório
-        results_df = pd.DataFrame(results)
-        results_df.to_csv(f'certificate_results_{int(datetime.now().timestamp())}.csv', index=False)
-        
-        return results
-    
-    def _create_certificate(self, certificate_data):
-        """Cria um certificado individual"""
-        response = requests.post(
-            f'{self.base_url}/writeCertificate',
-            headers={
-                'Authorization': f'Bearer {self.token}',
-                'Content-Type': 'application/json'
-            },
-            json=certificate_data
-        )
-        
-        if not response.ok:
-            raise Exception(f"HTTP {response.status_code}: {response.json().get('message', 'Unknown error')}")
-        
-        return response.json()
-    
-    def validate_certificate(self, code):
-        """Valida se um certificado existe"""
-        response = requests.get(
-            f'{self.base_url}/getCertificate',
-            params={'code': code}
-        )
-        return response.ok, response.json()
-
-# Exemplo de uso
-if __name__ == "__main__":
-    # Configurações
-    processor = CertificateBatchProcessor(
-        base_url='https://seu-site.netlify.app/.netlify/functions',
-        key_id='sua-key-id',
-        secret='sua-chave-secreta'
-    )
-    
-    # Processar CSV
-    results = processor.process_csv(
-        csv_file='participantes.csv',
-        event_name='Workshop Python 2024',
-        event_date='2024-08-20',
-        hours='12'
-    )
-    
-    print(f"\nProcessamento concluído!")
-    print(f"Total processados: {len(results)}")
-    print(f"Sucessos: {len([r for r in results if r['status'] == 'success'])}")
-    print(f"Erros: {len([r for r in results if r['status'] == 'error'])}")
-```
-
-### 4. Middleware Express.js para Autenticação
+### 4. Administração - Upgrade de Permissões
 
 ```javascript
-const jwt = require('jsonwebtoken');
-
-class CertificateAPIClient {
-    constructor(baseUrl) {
-        this.baseUrl = baseUrl;
-    }
-    
-    // Middleware para Express.js
-    createAuthMiddleware(keyId, secret) {
-        return (req, res, next) => {
-            try {
-                const token = jwt.sign(
-                    { 
-                        keyId: keyId,
-                        iat: Math.floor(Date.now() / 1000),
-                        exp: Math.floor(Date.now() / 1000) + (60 * 30) // 30 minutos
-                    },
-                    secret
-                );
-                
-                req.certificateToken = token;
-                next();
-            } catch (error) {
-                res.status(500).json({ error: 'Falha na autenticação da API de certificados' });
-            }
-        };
-    }
-    
-    // Helper para criar certificados
-    async createCertificate(token, certificateData) {
-        const response = await fetch(`${this.baseUrl}/writeCertificate`, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(certificateData)
-        });
-        
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.message || 'Erro ao criar certificado');
-        }
-        
-        return await response.json();
-    }
-    
-    // Helper para buscar certificados
-    async getCertificate(code) {
-        const response = await fetch(`${this.baseUrl}/getCertificate?code=${encodeURIComponent(code)}`);
-        
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.message || 'Erro ao buscar certificado');
-        }
-        
-        return await response.json();
-    }
-}
-
-// Exemplo de uso com Express.js
-const express = require('express');
-const app = express();
-
-const certificateAPI = new CertificateAPIClient('https://seu-site.netlify.app/.netlify/functions');
-
-// Middleware de autenticação
-app.use('/api/certificates', certificateAPI.createAuthMiddleware('sua-key-id', 'sua-chave-secreta'));
-
-// Rota para criar certificado
-app.post('/api/certificates', async (req, res) => {
-    try {
-        const result = await certificateAPI.createCertificate(req.certificateToken, req.body);
-        res.status(201).json(result);
-    } catch (error) {
-        res.status(400).json({ error: error.message });
-    }
-});
-
-// Rota para buscar certificado
-app.get('/api/certificates/:code', async (req, res) => {
-    try {
-        const result = await certificateAPI.getCertificate(req.params.code);
-        res.json(result);
-    } catch (error) {
-        res.status(404).json({ error: error.message });
-    }
-});
-```
-
-### 5. Classe PHP para Integração
-
-```php
-<?php
-
-class CertificateAPI {
-    private $baseUrl;
-    private $keyId;
-    private $secret;
-    
-    public function __construct($baseUrl, $keyId, $secret) {
-        $this->baseUrl = rtrim($baseUrl, '/');
-        $this->keyId = $keyId;
-        $this->secret = $secret;
-    }
-    
-    private function createToken($expirationMinutes = 60) {
-        $header = json_encode(['typ' => 'JWT', 'alg' => 'HS256']);
-        $payload = json_encode([
-            'keyId' => $this->keyId,
-            'iat' => time(),
-            'exp' => time() + ($expirationMinutes * 60)
-        ]);
-        
-        $headerEncoded = str_replace(['+', '/', '='], ['-', '_', ''], base64_encode($header));
-        $payloadEncoded = str_replace(['+', '/', '='], ['-', '_', ''], base64_encode($payload));
-        
-        $signature = hash_hmac('sha256', $headerEncoded . "." . $payloadEncoded, $this->secret, true);
-        $signatureEncoded = str_replace(['+', '/', '='], ['-', '_', ''], base64_encode($signature));
-        
-        return $headerEncoded . "." . $payloadEncoded . "." . $signatureEncoded;
-    }
-    
-    public function createCertificate($certificateData) {
-        $token = $this->createToken();
-        
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $this->baseUrl . '/writeCertificate');
-        curl_setopt($ch, CURLOPT_POST, 1);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($certificateData));
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            'Authorization: Bearer ' . $token,
-            'Content-Type: application/json'
-        ]);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        
-        $response = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-        
-        $data = json_decode($response, true);
-        
-        if ($httpCode >= 400) {
-            throw new Exception($data['message'] ?? 'Erro desconhecido');
-        }
-        
-        return $data;
-    }
-    
-    public function getCertificate($code) {
-        $url = $this->baseUrl . '/getCertificate?code=' . urlencode($code);
-        
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        
-        $response = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-        
-        $data = json_decode($response, true);
-        
-        if ($httpCode >= 400) {
-            throw new Exception($data['message'] ?? 'Certificado não encontrado');
-        }
-        
-        return $data;
-    }
-    
-    public function validateCertificate($code) {
-        try {
-            $certificate = $this->getCertificate($code);
-            return [
-                'valid' => true,
-                'certificate' => $certificate
-            ];
-        } catch (Exception $e) {
-            return [
-                'valid' => false,
-                'error' => $e->getMessage()
-            ];
-        }
-    }
-}
-
-// Exemplo de uso
-try {
-    $api = new CertificateAPI(
-        'https://seu-site.netlify.app/.netlify/functions',
-        'sua-key-id',
-        'sua-chave-secreta'
+class AdminFlow {
+  constructor(adminKeyId, adminSecret) {
+    this.adminKeyId = adminKeyId;
+    this.adminSecret = adminSecret;
+    this.baseUrl = 'https://seu-site.netlify.app/.netlify/functions';
+  }
+  
+  createAdminToken() {
+    return jwt.sign(
+      { 
+        keyId: this.adminKeyId,
+        iat: Math.floor(Date.now() / 1000),
+        exp: Math.floor(Date.now() / 1000) + (60 * 60 * 24)
+      },
+      this.adminSecret
     );
+  }
+  
+  // Listar solicitações de upgrade (chaves reader existentes)
+  async listReaderKeys() {
+    const token = this.createAdminToken();
     
-    // Criar certificado
-    $certificate = $api->createCertificate([
-        'code' => 'PHP-CERT-001',
-        'name' => 'João Silva',
-        'event' => 'Curso de PHP Avançado',
-        'date' => '2024-08-20',
-        'hours' => '40'
-    ]);
+    const response = await fetch(`${this.baseUrl}/createKey`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
     
-    echo "Certificado criado: " . $certificate['id'] . "\n";
+    const result = await response.json();
+    const readerKeys = result.keys.filter(key => key.role === 'reader' && key.isActive);
     
-    // Validar certificado
-    $validation = $api->validateCertificate('PHP-CERT-001');
-    if ($validation['valid']) {
-        echo "Certificado válido para: " . $validation['certificate']['name'] . "\n";
+    console.log('📋 Chaves reader disponíveis para upgrade:');
+    readerKeys.forEach(key => {
+      console.log(`- ${key.description} (ID: ${key.id})`);
+    });
+    
+    return readerKeys;
+  }
+  
+  // Fazer upgrade de reader para issuer
+  async upgradeToIssuer(keyDescription, newDescription = null) {
+    const token = this.createAdminToken();
+    const encodedDescription = encodeURIComponent(keyDescription);
+    
+    const updates = {
+      role: 'issuer'
+    };
+    
+    if (newDescription) {
+      updates.description = newDescription;
     }
     
-} catch (Exception $e) {
-    echo "Erro: " . $e->getMessage() . "\n";
+    const response = await fetch(`${this.baseUrl}/manageKey/${encodedDescription}`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(updates)
+    });
+    
+    const result = await response.json();
+    
+    if (response.ok) {
+      console.log(`✅ Upgrade realizado: ${keyDescription} → issuer`);
+      return result;
+    } else {
+      throw new Error(`Erro no upgrade: ${result.message}`);
+    }
+  }
+  
+  // Criar chave issuer diretamente (sem passar por reader)
+  async createDirectIssuer(description) {
+    const token = this.createAdminToken();
+    
+    const response = await fetch(`${this.baseUrl}/createKey`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        role: 'issuer',
+        isActive: true,
+        description: description
+      })
+    });
+    
+    const result = await response.json();
+    
+    if (response.ok) {
+      console.log(`✅ Chave issuer criada: ${description}`);
+      return result;
+    } else {
+      throw new Error(`Erro na criação: ${result.message}`);
+    }
+  }
 }
-?>
+
+// Exemplo de uso admin
+async function adminExample() {
+  // Usar credentials da chave admin criada manualmente no Firebase
+  const admin = new AdminFlow('sua-admin-key-id-manual', 'chave-secreta-admin-muito-segura');
+  
+  // Listar chaves reader para possível upgrade
+  const readerKeys = await admin.listReaderKeys();
+  
+  // Fazer upgrade de uma chave específica
+  await admin.upgradeToIssuer('Terminal João Silva - Validador UFSC', 'João Silva - Emissor Autorizado');
+  
+  // Ou criar issuer diretamente
+  await admin.createDirectIssuer('Sistema Principal de Eventos - Emissor Automático');
+}
 ```
 
-### 6. Monitoramento e Logs
+### 5. Segurança e Considerações
 
 ```javascript
-// Sistema de logs para monitorar uso da API
-class APIMonitor {
-    constructor(webhookUrl) {
-        this.webhookUrl = webhookUrl;
-    }
-    
-    async logAPIUsage(endpoint, method, statusCode, userId = null) {
-        const logData = {
-            timestamp: new Date().toISOString(),
-            endpoint,
-            method,
-            statusCode,
-            userId,
-            userAgent: navigator.userAgent
-        };
-        
-        try {
-            await fetch(this.webhookUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(logData)
-            });
-        } catch (error) {
-            console.error('Erro ao enviar log:', error);
-        }
-    }
-    
-    // Wrapper para requisições com log automático
-    async makeAPIRequest(url, options = {}) {
-        const startTime = Date.now();
-        
-        try {
-            const response = await fetch(url, options);
-            const endTime = Date.now();
-            
-            await this.logAPIUsage(
-                url,
-                options.method || 'GET',
-                response.status,
-                options.userId
-            );
-            
-            console.log(`API Request: ${options.method || 'GET'} ${url} - ${response.status} (${endTime - startTime}ms)`);
-            
-            return response;
-        } catch (error) {
-            await this.logAPIUsage(
-                url,
-                options.method || 'GET',
-                0,
-                options.userId
-            );
-            throw error;
-        }
-    }
-}
+// ✅ CORRETO: Bootstrap apenas para reader
+const publicBootstrapFlow = {
+  secret: 'nepemcert-inicial-ufsc-2024', // PODE ser público
+  allowedRoles: ['reader'], // APENAS reader
+  purpose: 'Acesso inicial mínimo para validação'
+};
 
-// Uso
-const monitor = new APIMonitor('https://your-webhook-url.com/api-logs');
+// ✅ CORRETO: Admin criado manualmente
+const secureAdminFlow = {
+  creation: 'Manual no Firebase Console',
+  secret: 'chave-muito-segura-nunca-divulgada',
+  allowedRoles: ['admin', 'issuer'], // Pode criar qualquer role
+  purpose: 'Administração completa do sistema'
+};
 
-// Exemplo de uso com monitoramento
-async function createCertificateWithLog(certificateData, token, userId) {
-    return await monitor.makeAPIRequest('/.netlify/functions/writeCertificate', {
-        method: 'POST',
-        headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(certificateData),
-        userId: userId
-    });
-}
+// ❌ INCORRETO: Bootstrap para admin/issuer
+// const wrongBootstrapFlow = {
+//   secret: 'nepemcert-inicial-ufsc-2024',
+//   allowedRoles: ['admin', 'issuer'], // PERIGOSO!
+//   purpose: 'Muito permissivo para chave pública'
+// };
 ```
 
-## Testes Automatizados
+## Fluxo Típico de um Novo Usuário
 
-```javascript
-// Testes Jest para a API
-const jwt = require('jsonwebtoken');
+1. **Download do terminal** → Contém bootstrap secret público
+2. **Criar chave reader** → Usando bootstrap para acesso inicial  
+3. **Validar certificados** → Funcionalidade básica disponível
+4. **Solicitar upgrade** → Contato com admin para issuer
+5. **Emitir certificados** → Após aprovação do admin
 
-describe('Certificate API', () => {
-    const baseUrl = 'https://seu-site.netlify.app/.netlify/functions';
-    let adminToken, issuerToken;
-    
-    beforeAll(() => {
-        // Criar tokens de teste
-        adminToken = jwt.sign(
-            { keyId: 'test-admin-key', iat: Math.floor(Date.now() / 1000), exp: Math.floor(Date.now() / 1000) + 3600 },
-            'test-admin-secret'
-        );
-        
-        issuerToken = jwt.sign(
-            { keyId: 'test-issuer-key', iat: Math.floor(Date.now() / 1000), exp: Math.floor(Date.now() / 1000) + 3600 },
-            'test-issuer-secret'
-        );
-    });
-    
-    test('Deve criar um certificado com dados válidos', async () => {
-        const certificateData = {
-            code: `TEST-${Date.now()}`,
-            name: 'João Teste',
-            event: 'Evento de Teste',
-            date: '2024-08-20',
-            hours: '8'
-        };
-        
-        const response = await fetch(`${baseUrl}/writeCertificate`, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${issuerToken}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(certificateData)
-        });
-        
-        expect(response.status).toBe(201);
-        const result = await response.json();
-        expect(result.message).toContain('successfully');
-        expect(result.id).toBe(certificateData.code);
-    });
-    
-    test('Deve buscar um certificado existente', async () => {
-        const code = 'TEST-EXISTING';
-        
-        const response = await fetch(`${baseUrl}/getCertificate?code=${code}`);
-        
-        if (response.status === 200) {
-            const result = await response.json();
-            expect(result.code).toBe(code);
-            expect(result.name).toBeDefined();
-        } else {
-            expect(response.status).toBe(404);
-        }
-    });
-    
-    test('Deve rejeitar criação sem autenticação', async () => {
-        const response = await fetch(`${baseUrl}/writeCertificate`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ code: 'TEST', name: 'Test', event: 'Test' })
-        });
-        
-        expect(response.status).toBe(401);
-    });
-});
+Este fluxo garante segurança enquanto permite acesso inicial sem barreiras.
+
+## Variáveis de Ambiente Necessárias
+
+Configure no Netlify:
+
+```env
+# Firebase
+FIREBASE_PROJECT_ID=your-project-id
+FIREBASE_PRIVATE_KEY=your-private-key
+FIREBASE_CLIENT_EMAIL=your-client-email
+
+# Bootstrap (para setup inicial)
+NEPEMCERT_BOOTSTRAP_SECRET=sua-chave-secreta-muito-segura-para-bootstrap
 ```
-
-Este guia fornece exemplos práticos e casos de uso reais para implementar e usar a API de certificados em diferentes linguagens e cenários.

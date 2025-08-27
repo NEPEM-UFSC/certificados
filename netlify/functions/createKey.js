@@ -1,9 +1,48 @@
+/**
+ * Netlify Function: createKey
+ * 
+ * Handles creation of new API keys in Firestore, with authentication and authorization via JWT.
+ * Only users with the 'admin' role can create new keys.
+ * 
+ * @file /netlify/functions/createKey.js
+ * 
+ * @requires firebase-admin
+ * @requires jsonwebtoken
+ * 
+ * @function authenticate
+ * @async
+ * @param {Object} event - Netlify function event object containing headers.
+ * @param {string[]} requiredRoles - Array of roles allowed to perform the operation.
+ * @returns {Promise<Object>} Authentication result or error response.
+ * 
+ * @function handler
+ * @async
+ * @param {Object} event - Netlify function event object.
+ * @param {Object} context - Netlify function context object.
+ * @returns {Promise<Object>} HTTP response object.
+ * 
+ * @typedef {Object} KeyData
+ * @property {string} role - Role assigned to the key ('admin', 'issuer', 'reader').
+ * @property {boolean} isActive - Whether the key is active.
+ * @property {string} [secret] - Secret used for JWT verification.
+ * 
+ * @typedef {Object} AuthResult
+ * @property {boolean} authenticated - Whether authentication succeeded.
+ * @property {string} role - Role of the authenticated key.
+ * @property {string} keyId - ID of the key used for authentication.
+ * 
+ * @description
+ * - Initializes Firebase Admin SDK using environment variables.
+ * - Authenticates requests using JWT, with secret fetched from Firestore based on keyId in JWT payload.
+ * - Authorizes based on key role and isActive status.
+ * - Validates request body for required key data.
+ * - Creates a new key document in Firestore if authorized.
+ * - Handles and returns appropriate HTTP status codes and error messages.
+ */
 const admin = require('firebase-admin');
 const jwt = require('jsonwebtoken'); // Import the jsonwebtoken library
 
-// Inicializa o Firebase Admin SDK apenas uma vez
 if (!admin.apps.length) {
-  // Sempre usar variáveis de ambiente
   admin.initializeApp({
     credential: admin.credential.cert({
       projectId: process.env.FIREBASE_PROJECT_ID,
@@ -15,8 +54,12 @@ if (!admin.apps.length) {
 
 const db = admin.firestore();
 
+// Chave especial para bootstrap inicial (não armazenada no Firestore)
+const BOOTSTRAP_KEY_ID = 'nepemcert-bootstrap';
+const BOOTSTRAP_SECRET = process.env.NEPEMCERT_BOOTSTRAP_SECRET || 'w7QseXqFTiWMWLFkK0GG2scQGW2FobrU';
+
 // Middleware de autenticação e autorização usando JWT com chave do Firestore
-const authenticate = async (event, requiredRoles) => {
+const authenticate = async (event, requiredRoles, allowBootstrap = false) => {
   const authHeader = event.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return {
@@ -38,7 +81,20 @@ const authenticate = async (event, requiredRoles) => {
     }
     const keyId = decodedHeader.payload.keyId;
 
-    // 2. Buscar a chave secreta no Firestore usando o keyId
+    // 2. Verificar se é a chave de bootstrap
+    if (allowBootstrap && keyId === BOOTSTRAP_KEY_ID) {
+      try {
+        const verifiedToken = jwt.verify(token, BOOTSTRAP_SECRET);
+        return { authenticated: true, role: 'bootstrap', keyId: BOOTSTRAP_KEY_ID };
+      } catch (error) {
+        return {
+          statusCode: 401,
+          body: JSON.stringify({ message: 'Authentication failed: Invalid bootstrap token', error: error.message }),
+        };
+      }
+    }
+
+    // 3. Buscar a chave secreta no Firestore usando o keyId
     const keyDoc = await db.collection('keys').doc(keyId).get();
 
     if (!keyDoc.exists) {
@@ -49,7 +105,7 @@ const authenticate = async (event, requiredRoles) => {
     }
 
     const keyData = keyDoc.data();
-    const secret = keyData.secret; // A chave secreta para verificar o JWT
+    const secret = keyData.secret;
 
     if (!secret) {
       return {
@@ -58,10 +114,10 @@ const authenticate = async (event, requiredRoles) => {
       };
     }
 
-    // 3. Verificar criptograficamente o JWT usando o secret recuperado
+    // 4. Verificar criptograficamente o JWT usando o secret recuperado
     const verifiedToken = jwt.verify(token, secret); // Isso também valida 'exp'
 
-    // 4. Autorização baseada em regras de negócio
+    // 5. Autorização baseada em regras de negócio
     if (!keyData.isActive) {
       return {
         statusCode: 403,
@@ -99,17 +155,50 @@ const authenticate = async (event, requiredRoles) => {
 };
 
 exports.handler = async (event, context) => {
+  if (event.httpMethod === 'GET') {
+    // Listar chaves - apenas admin
+    const authResult = await authenticate(event, ['admin']);
+    if (!authResult.authenticated) {
+      return authResult;
+    }
+
+    try {
+      const keysSnapshot = await db.collection('keys').get();
+      const keys = [];
+      keysSnapshot.forEach(doc => {
+        const keyData = doc.data();
+        keys.push({
+          id: doc.id,
+          description: keyData.description,
+          role: keyData.role,
+          isActive: keyData.isActive,
+          createdAt: keyData.createdAt || null,
+          updatedAt: keyData.updatedAt || null,
+          // Não retornar o secret por segurança
+        });
+      });
+
+      // Ordenar por description para facilitar localização
+      keys.sort((a, b) => a.description.localeCompare(b.description));
+
+      return {
+        statusCode: 200,
+        body: JSON.stringify({ keys, total: keys.length }),
+      };
+    } catch (error) {
+      console.error('Error listing keys:', error);
+      return {
+        statusCode: 500,
+        body: JSON.stringify({ message: 'Internal Server Error', error: error.message }),
+      };
+    }
+  }
+
   if (event.httpMethod !== 'POST') {
     return {
       statusCode: 405,
       body: JSON.stringify({ message: 'Method Not Allowed' }),
     };
-  }
-
-  // Autenticação e autorização
-  const authResult = await authenticate(event, ['admin']); // Apenas 'admin' pode criar chaves
-  if (!authResult.authenticated) {
-    return authResult; // Retorna o erro de autenticação/autorização
   }
 
   let keyData;
@@ -123,14 +212,14 @@ exports.handler = async (event, context) => {
   }
 
   // Validação básica dos dados da chave
-  if (!keyData || !keyData.role || typeof keyData.isActive === 'undefined') {
+  if (!keyData || !keyData.role || typeof keyData.isActive === 'undefined' || !keyData.description) {
     return {
       statusCode: 400,
-      body: JSON.stringify({ message: 'Missing required key data: role and isActive are mandatory' }),
+      body: JSON.stringify({ message: 'Missing required key data: role, isActive and description are mandatory' }),
     };
   }
 
-  // Opcional: Validar se o role é um dos permitidos
+  // Validar se o role é um dos permitidos
   const allowedRoles = ['admin', 'issuer', 'reader'];
   if (!allowedRoles.includes(keyData.role)) {
     return {
@@ -139,12 +228,81 @@ exports.handler = async (event, context) => {
     };
   }
 
+  // Validar description
+  if (typeof keyData.description !== 'string' || keyData.description.trim().length < 3) {
+    return {
+      statusCode: 400,
+      body: JSON.stringify({ message: 'Description must be a string with at least 3 characters' }),
+    };
+  }
+
+  // Verificar se description já existe
   try {
-    // Adiciona um novo documento à coleção 'keys'. Firestore irá gerar um Document ID automaticamente.
+    const existingKeysSnapshot = await db.collection('keys').where('description', '==', keyData.description.trim()).get();
+    if (!existingKeysSnapshot.empty) {
+      return {
+        statusCode: 409,
+        body: JSON.stringify({ message: 'A key with this description already exists' }),
+      };
+    }
+  } catch (error) {
+    console.error('Error checking existing descriptions:', error);
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ message: 'Internal Server Error while validating description', error: error.message }),
+    };
+  }
+
+  // Verificar autorização baseada no role solicitado
+  if (keyData.role === 'reader') {
+    // Para role 'reader', permite criação pública com chave bootstrap ou com chaves admin/issuer
+    const authHeader = event.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      // Se tem token, verificar se é válido (admin, issuer ou bootstrap)
+      const authResult = await authenticate(event, ['admin', 'issuer'], true);
+      if (!authResult.authenticated) {
+        return authResult;
+      }
+    } else {
+      // Se não tem token, rejeitar - chave reader só pode ser criada com bootstrap
+      return {
+        statusCode: 401,
+        body: JSON.stringify({ 
+          message: 'Authentication required: Reader keys can only be created with bootstrap token. Use Authorization: Bearer <bootstrap_token>' 
+        }),
+      };
+    }
+  } else {
+    // Para roles 'issuer' ou 'admin', apenas admin pode criar
+    const authResult = await authenticate(event, ['admin'], false);
+    if (!authResult.authenticated) {
+      return authResult;
+    }
+  }
+
+  try {
+    if (!keyData.secret) {
+      keyData.secret = require('crypto').randomBytes(32).toString('hex');
+    }
+
+    // Limpar e adicionar dados obrigatórios
+    keyData.description = keyData.description.trim();
+    keyData.createdAt = admin.firestore.FieldValue.serverTimestamp();
+
+    // Adiciona um novo documento à coleção 'keys'
     const docRef = await db.collection('keys').add(keyData);
+    
     return {
       statusCode: 201,
-      body: JSON.stringify({ message: 'Key created successfully', id: docRef.id, ...keyData }),
+      body: JSON.stringify({ 
+        message: 'Key created successfully', 
+        id: docRef.id,
+        description: keyData.description,
+        role: keyData.role,
+        isActive: keyData.isActive,
+        // Retornar o secret apenas na criação para o usuário copiar
+        secret: keyData.secret
+      }),
     };
   } catch (error) {
     console.error('Error creating key:', error);

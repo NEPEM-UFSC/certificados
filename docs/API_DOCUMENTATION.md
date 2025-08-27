@@ -27,10 +27,32 @@ A API utiliza um sistema de autenticação baseado em JWT (JSON Web Tokens) com 
 }
 ```
 
-#### Sistema de Roles
-- **admin**: Acesso completo (criar, ler, editar, deletar certificados e chaves)
-- **issuer**: Pode criar e ler certificados
-- **reader**: Apenas leitura de certificados
+### Sistema de Roles e Acesso Inicial
+
+- **admin**: Acesso completo (criado manualmente no Firebase)
+- **issuer**: Pode criar e ler certificados (criado por admin)
+- **reader**: Apenas leitura de certificados (pode ser criado com token bootstrap)
+
+#### Token Bootstrap - Acesso Público Limitado
+
+O sistema inclui um **token bootstrap público** que permite criar apenas chaves `reader`:
+
+```javascript
+// Chave pública - distribuída com terminais
+const BOOTSTRAP_SECRET = 'nepemcert-inicial-ufsc-2024';
+const BOOTSTRAP_KEY_ID = 'nepemcert-bootstrap-2024';
+
+// Qualquer usuário pode criar este token
+const bootstrapToken = jwt.sign({
+  keyId: BOOTSTRAP_KEY_ID,
+  iat: Math.floor(Date.now() / 1000),
+  exp: Math.floor(Date.now() / 1000) + 86400 // 24h
+}, BOOTSTRAP_SECRET);
+```
+
+**Finalidade**: Permitir que novos usuários tenham acesso inicial mínimo sem precisar de aprovação prévia.
+
+**Limitação**: Só pode criar chaves `reader` - não pode criar `issuer` ou `admin`.
 
 ---
 
@@ -42,74 +64,66 @@ Cria uma nova chave de acesso à API.
 
 **Endpoint:** `POST /createKey`
 
-**Autenticação:** Requerida (role: `admin`)
+**Autenticação:** 
+- Para chaves `reader`: Token bootstrap (público) OU token admin/issuer
+- Para chaves `issuer/admin`: Token admin (apenas)
 
-#### Headers
-```
-Authorization: Bearer <jwt_token>
-Content-Type: application/json
-```
+#### Regras de Autorização Detalhadas
 
-#### Request Body
-```json
-{
-  "role": "string",
-  "isActive": boolean,
-  "secret": "string"
-}
-```
+| Role Solicitado | Token Necessário | Quem Pode Criar |
+|-----------------|------------------|-----------------|
+| `reader` | Bootstrap (público) | Qualquer usuário |
+| `reader` | Admin/Issuer | Admin ou Issuer |
+| `issuer` | Admin | Apenas Admin |
+| `admin` | Admin | Apenas Admin |
 
-#### Parâmetros
+#### Exemplos de Uso por Cenário
 
-| Campo | Tipo | Obrigatório | Descrição |
-|-------|------|-------------|-----------|
-| `role` | string | Sim | Role da chave (`admin`, `issuer`, `reader`) |
-| `isActive` | boolean | Sim | Se a chave está ativa |
-| `secret` | string | Opcional | Chave secreta para assinar JWTs (gerada automaticamente se não fornecida) |
-
-#### Responses
-
-**201 Created**
-```json
-{
-  "message": "Key created successfully",
-  "id": "generated_key_id",
-  "role": "issuer",
-  "isActive": true
-}
-```
-
-**400 Bad Request**
-```json
-{
-  "message": "Missing required key data: role and isActive are mandatory"
-}
-```
-
-**401 Unauthorized**
-```json
-{
-  "message": "Authentication required: Missing or invalid Authorization header"
-}
-```
-
-**403 Forbidden**
-```json
-{
-  "message": "Forbidden: Role \"issuer\" not authorized for this operation"
-}
-```
-
-#### Exemplo de Uso
-
+**Novo usuário criando acesso inicial:**
 ```bash
+# Token bootstrap (público)
 curl -X POST https://seu-site.netlify.app/.netlify/functions/createKey \
-  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJrZXlJZCI6Im5lcGVtY2VydC1ib290c3RyYXAtMjAyNCIsImlhdCI6MTYyMzMzNzIwMCwiZXhwIjoxNjIzMzQwODAwfQ.signature" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "role": "reader",
+    "isActive": true,
+    "description": "Meu Terminal - João Silva"
+  }'
+```
+
+**Admin criando chave privilegiada:**
+```bash
+# Token admin
+curl -X POST https://seu-site.netlify.app/.netlify/functions/createKey \
+  -H "Authorization: Bearer <admin_token>" \
   -H "Content-Type: application/json" \
   -d '{
     "role": "issuer",
-    "isActive": true
+    "isActive": true,
+    "description": "Sistema de Eventos - Emissor Principal"
   }'
+```
+
+#### Responses Específicas
+
+**201 Created (Reader com Bootstrap)**
+```json
+{
+  "message": "Key created successfully",
+  "id": "abc123def456",
+  "description": "Meu Terminal - João Silva",
+  "role": "reader",
+  "isActive": true,
+  "secret": "generated-secret-for-reader"
+}
+```
+
+**403 Forbidden (Bootstrap tentando criar issuer)**
+```json
+{
+  "message": "Forbidden: Bootstrap token can only create reader keys"
+}
 ```
 
 ---
@@ -520,3 +534,69 @@ Para questões técnicas ou suporte, entre em contato com a equipe de desenvolvi
 
 **Versão da API:** 0.5.0  
 **Última atualização:** Agosto 2025
+
+---
+
+## Setup Inicial do Sistema
+
+### 1. Chave Admin Manual (Uma vez apenas)
+
+```javascript
+// Criar manualmente no Firebase Console, coleção 'keys':
+{
+  role: 'admin',
+  isActive: true,
+  description: 'Administrador Principal - NEPEM UFSC',
+  secret: 'sua-chave-secreta-admin-muito-segura',
+  createdAt: /* timestamp atual */,
+  createdBy: 'manual-setup'
+}
+```
+
+### 2. Distribuição do Bootstrap
+
+```javascript
+// Este código pode ser distribuído publicamente:
+const BOOTSTRAP_CONFIG = {
+  keyId: 'nepemcert-bootstrap-2024',
+  secret: 'nepemcert-inicial-ufsc-2024', // PÚBLICO
+  maxRole: 'reader' // Limitação fixa
+};
+
+function createPublicAccessToken() {
+  return jwt.sign({
+    keyId: BOOTSTRAP_CONFIG.keyId,
+    iat: Math.floor(Date.now() / 1000),
+    exp: Math.floor(Date.now() / 1000) + 86400
+  }, BOOTSTRAP_CONFIG.secret);
+}
+```
+
+### 3. Fluxo de Upgrade
+
+```javascript
+// Usuário solicita upgrade (processo fora da API)
+const upgradeRequest = {
+  currentKeyDescription: 'Meu Terminal - João Silva',
+  currentKeyId: 'abc123def456',
+  requestedRole: 'issuer',
+  justification: 'Preciso emitir certificados para eventos da UFSC'
+};
+
+// Admin processa upgrade via API
+async function processUpgrade(adminToken, request) {
+  const response = await fetch(`/.netlify/functions/manageKey/${encodeURIComponent(request.currentKeyDescription)}`, {
+    method: 'PUT',
+    headers: {
+      'Authorization': `Bearer ${adminToken}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      role: request.requestedRole,
+      description: `${request.currentKeyDescription} - ${request.requestedRole.toUpperCase()}`
+    })
+  });
+  
+  return await response.json();
+}
+```
