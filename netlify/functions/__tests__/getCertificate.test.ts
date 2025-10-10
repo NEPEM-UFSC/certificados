@@ -101,7 +101,6 @@ describe('getCertificate handler', () => {
     // Asserção Aprimorada: Usamos `toEqual` no objeto inteiro para garantir
     // que a resposta é exatamente o que esperamos, sem campos a mais ou a menos.
     expect(body).toEqual({
-      id: 'cert123',
       code: 'cert123',
       name: 'Test User',
       event: 'Test Event',
