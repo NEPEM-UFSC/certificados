@@ -160,7 +160,7 @@ describe('createKey Netlify Function', () => {
     const context = {};
     const response = await handler(event, context);
     expect(response.statusCode).toBe(400);
-    expect(JSON.parse(response.body!)).toEqual({ message: 'Missing required key data: role and isActive are mandatory' });
+    expect(JSON.parse(response.body!)).toEqual({ message: 'Missing required key data: role, isActive and description are mandatory' });
   });
 
   it('should return 400 if an invalid role is provided', async () => {
