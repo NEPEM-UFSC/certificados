@@ -146,7 +146,7 @@ describe('createKey Netlify Function', () => {
     expect(JSON.parse(response.body!)).toEqual({ message: 'Forbidden: Role "reader" not authorized for this operation' });
   });
 
-  it('should allow bootstrap token to create keys', async () => {
+  it('should allow bootstrap token to create reader keys', async () => {
     // Mock bootstrap token
     (jwt.decode as jest.Mock).mockReturnValue({ payload: { keyId: 'nepemcert-bootstrap' } });
     (jwt.verify as jest.Mock).mockReturnValue({ role: 'bootstrap' });
@@ -154,7 +154,7 @@ describe('createKey Netlify Function', () => {
     // Mock que o keyId gerado não existe ainda
     (admin.firestore().collection().doc().get as jest.Mock).mockResolvedValueOnce({ exists: false });
     
-    const event: NetlifyEvent = { httpMethod: 'POST', headers: { authorization: 'Bearer bootstrap-token' }, body: JSON.stringify({ role: 'admin', isActive: true, description: 'Bootstrap Admin Key' }) };
+    const event: NetlifyEvent = { httpMethod: 'POST', headers: { authorization: 'Bearer bootstrap-token' }, body: JSON.stringify({ role: 'reader', isActive: true, description: 'Bootstrap Reader Key' }) };
     const context = {};
     const response = await handler(event, context);
     expect(response.statusCode).toBe(201);
@@ -162,7 +162,31 @@ describe('createKey Netlify Function', () => {
     expect(responseBody).toHaveProperty('message', 'Key created successfully');
     expect(responseBody).toHaveProperty('keyId');
     expect(responseBody).toHaveProperty('secret');
-    expect(responseBody).toHaveProperty('role', 'admin');
+    expect(responseBody).toHaveProperty('role', 'reader');
+  });
+
+  it('should not allow bootstrap token to create admin keys', async () => {
+    // Mock bootstrap token
+    (jwt.decode as jest.Mock).mockReturnValue({ payload: { keyId: 'nepemcert-bootstrap' } });
+    (jwt.verify as jest.Mock).mockReturnValue({ role: 'bootstrap' });
+    
+    const event: NetlifyEvent = { httpMethod: 'POST', headers: { authorization: 'Bearer bootstrap-token' }, body: JSON.stringify({ role: 'admin', isActive: true, description: 'Bootstrap Admin Key' }) };
+    const context = {};
+    const response = await handler(event, context);
+    expect(response.statusCode).toBe(403);
+    expect(JSON.parse(response.body!)).toEqual({ message: 'Bootstrap token can only create reader keys' });
+  });
+
+  it('should not allow bootstrap token to create issuer keys', async () => {
+    // Mock bootstrap token
+    (jwt.decode as jest.Mock).mockReturnValue({ payload: { keyId: 'nepemcert-bootstrap' } });
+    (jwt.verify as jest.Mock).mockReturnValue({ role: 'bootstrap' });
+    
+    const event: NetlifyEvent = { httpMethod: 'POST', headers: { authorization: 'Bearer bootstrap-token' }, body: JSON.stringify({ role: 'issuer', isActive: true, description: 'Bootstrap Issuer Key' }) };
+    const context = {};
+    const response = await handler(event, context);
+    expect(response.statusCode).toBe(403);
+    expect(JSON.parse(response.body!)).toEqual({ message: 'Bootstrap token can only create reader keys' });
   });
 
   it('should return 401 if JWT is expired', async () => {

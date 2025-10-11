@@ -222,6 +222,26 @@ exports.handler = async (event, context) => {
     };
   }
 
+  // Validação de permissões baseada no tipo de autenticação
+  if (authResult.role === 'bootstrap') {
+    // Bootstrap só pode criar chaves reader
+    if (keyData.role !== 'reader') {
+      return {
+        statusCode: 403,
+        body: JSON.stringify({ message: 'Bootstrap token can only create reader keys' }),
+      };
+    }
+  } else if (authResult.role === 'admin') {
+    // Admin pode criar qualquer role
+    // Permissão já validada na autenticação
+  } else {
+    // Outros roles não podem criar chaves
+    return {
+      statusCode: 403,
+      body: JSON.stringify({ message: `Role "${authResult.role}" cannot create keys` }),
+    };
+  }
+
   try {
     // Gerar secret seguro
     const secret = generateSecret();
