@@ -60,6 +60,10 @@ export function init() {
 
     try {
       const response = await fetch(`/.netlify/functions/getCertificate?code=${code}`);
+      
+      console.log('Response status:', response.status);
+      console.log('Response headers:', Object.fromEntries(response.headers.entries()));
+      
       if (response.status === 404) {
         resultSection.classList.remove('hidden');
         resultSection.className = 'bg-red-100 border-l-4 border-red-400 p-4 mb-4 rounded';
@@ -72,9 +76,13 @@ export function init() {
         }
         return;
       }
+      
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        const errorText = await response.text();
+        console.error('Error response:', errorText);
+        throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
       }
+      
       const certificate = await response.json();
 
       if (certificate) {

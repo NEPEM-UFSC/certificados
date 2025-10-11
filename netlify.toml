@@ -6,7 +6,20 @@
 [functions]
   node_bundler = "esbuild"
   external_node_modules = ["firebase-admin"]
+  
+[functions."getCertificate"]
+  timeout = 30
+
+[functions."writeCertificate"]
+  timeout = 30
+
+[functions."deleteCertificate"]
+  timeout = 30
+
+[functions."createKey"]
+  timeout = 30
 
 [dev]
   command = "npm run dev"
-  port = 3000
+  port = 8888
+  targetPort = 5173
