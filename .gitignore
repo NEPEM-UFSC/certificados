@@ -229,3 +229,7 @@ dist
 
 # Local Netlify folder
 .netlify
+
+keys/
+*.key
+secret/*.key
