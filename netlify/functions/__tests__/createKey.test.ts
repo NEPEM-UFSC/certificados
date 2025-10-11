@@ -12,6 +12,11 @@ interface NetlifyEvent {
 
 // Mock Firebase Admin SDK
 jest.mock('firebase-admin', () => {
+  const mockServerTimestamp = jest.fn(() => 'mock-timestamp');
+  const mockFieldValue = {
+    serverTimestamp: mockServerTimestamp,
+  };
+  
   const mockFirestore = {
     collection: jest.fn().mockReturnThis(),
     doc: jest.fn().mockReturnThis(),
@@ -19,14 +24,21 @@ jest.mock('firebase-admin', () => {
       exists: true,
       data: () => ({ secret: 'test-secret', isActive: true, role: 'admin' }),
     })),
-    add: jest.fn(),
+    set: jest.fn(),
+    FieldValue: mockFieldValue,
   };
+  
+  // Criar a função firestore que retorna a instância mockada
+  const firestoreFunc = jest.fn(() => mockFirestore) as any;
+  // Adicionar FieldValue como propriedade estática da função
+  firestoreFunc.FieldValue = mockFieldValue;
+  
   return {
     initializeApp: jest.fn(),
     credential: {
       cert: jest.fn(),
     },
-    firestore: jest.fn(() => mockFirestore),
+    firestore: firestoreFunc,
     apps: [], // Simulate no apps initialized initially
   };
 });
@@ -37,9 +49,22 @@ jest.mock('jsonwebtoken', () => ({
   verify: jest.fn(),
 }));
 
+// Mock crypto
+jest.mock('crypto', () => ({
+  randomBytes: jest.fn(() => ({
+    toString: jest.fn(() => 'mock-secret-48chars'),
+  })),
+  createHash: jest.fn(() => ({
+    update: jest.fn().mockReturnThis(),
+    digest: jest.fn(() => ({
+      substring: jest.fn(() => 'mock-hash-16c'),
+    })),
+  })),
+}));
+
 describe('createKey Netlify Function', () => {
   let mockKeyDoc: any;
-  let mockAddDoc: any;
+  let mockSetDoc: any;
 
   beforeEach(() => {
     // Reset mocks before each test
@@ -52,8 +77,8 @@ describe('createKey Netlify Function', () => {
     };
     (admin.firestore().collection().doc().get as jest.Mock).mockResolvedValue(mockKeyDoc);
     
-    mockAddDoc = { id: 'new-key-id' };
-    (admin.firestore().collection().add as jest.Mock).mockResolvedValue(mockAddDoc);
+    mockSetDoc = jest.fn().mockResolvedValue(undefined);
+    (admin.firestore().collection().doc().set as jest.Mock) = mockSetDoc;
 
     // Mock JWT decode and verify
     (jwt.decode as jest.Mock).mockReturnValue({ payload: { keyId: 'test-key-id' } });
@@ -121,6 +146,49 @@ describe('createKey Netlify Function', () => {
     expect(JSON.parse(response.body!)).toEqual({ message: 'Forbidden: Role "reader" not authorized for this operation' });
   });
 
+  it('should allow bootstrap token to create reader keys', async () => {
+    // Mock bootstrap token
+    (jwt.decode as jest.Mock).mockReturnValue({ payload: { keyId: 'nepemcert-bootstrap' } });
+    (jwt.verify as jest.Mock).mockReturnValue({ role: 'bootstrap' });
+    
+    // Mock que o keyId gerado não existe ainda
+    (admin.firestore().collection().doc().get as jest.Mock).mockResolvedValueOnce({ exists: false });
+    
+    const event: NetlifyEvent = { httpMethod: 'POST', headers: { authorization: 'Bearer bootstrap-token' }, body: JSON.stringify({ role: 'reader', isActive: true, description: 'Bootstrap Reader Key' }) };
+    const context = {};
+    const response = await handler(event, context);
+    expect(response.statusCode).toBe(201);
+    const responseBody = JSON.parse(response.body!);
+    expect(responseBody).toHaveProperty('message', 'Key created successfully');
+    expect(responseBody).toHaveProperty('keyId');
+    expect(responseBody).toHaveProperty('secret');
+    expect(responseBody).toHaveProperty('role', 'reader');
+  });
+
+  it('should not allow bootstrap token to create admin keys', async () => {
+    // Mock bootstrap token
+    (jwt.decode as jest.Mock).mockReturnValue({ payload: { keyId: 'nepemcert-bootstrap' } });
+    (jwt.verify as jest.Mock).mockReturnValue({ role: 'bootstrap' });
+    
+    const event: NetlifyEvent = { httpMethod: 'POST', headers: { authorization: 'Bearer bootstrap-token' }, body: JSON.stringify({ role: 'admin', isActive: true, description: 'Bootstrap Admin Key' }) };
+    const context = {};
+    const response = await handler(event, context);
+    expect(response.statusCode).toBe(403);
+    expect(JSON.parse(response.body!)).toEqual({ message: 'Bootstrap token can only create reader keys' });
+  });
+
+  it('should not allow bootstrap token to create issuer keys', async () => {
+    // Mock bootstrap token
+    (jwt.decode as jest.Mock).mockReturnValue({ payload: { keyId: 'nepemcert-bootstrap' } });
+    (jwt.verify as jest.Mock).mockReturnValue({ role: 'bootstrap' });
+    
+    const event: NetlifyEvent = { httpMethod: 'POST', headers: { authorization: 'Bearer bootstrap-token' }, body: JSON.stringify({ role: 'issuer', isActive: true, description: 'Bootstrap Issuer Key' }) };
+    const context = {};
+    const response = await handler(event, context);
+    expect(response.statusCode).toBe(403);
+    expect(JSON.parse(response.body!)).toEqual({ message: 'Bootstrap token can only create reader keys' });
+  });
+
   it('should return 401 if JWT is expired', async () => {
     (jwt.verify as jest.Mock).mockImplementation(() => {
       const error = new Error('jwt expired');
@@ -172,22 +240,43 @@ describe('createKey Netlify Function', () => {
   });
 
   it('should successfully create a key with status 201', async () => {
-    const event: NetlifyEvent = { httpMethod: 'POST', headers: { authorization: 'Bearer test-token' }, body: JSON.stringify({ role: 'issuer', isActive: true }) };
+    // Mock que o keyId gerado não existe ainda
+    (admin.firestore().collection().doc().get as jest.Mock).mockResolvedValueOnce(mockKeyDoc).mockResolvedValueOnce({ exists: false });
+    
+    const event: NetlifyEvent = { httpMethod: 'POST', headers: { authorization: 'Bearer test-token' }, body: JSON.stringify({ role: 'issuer', isActive: true, description: 'Test Key' }) };
     const context = {};
     const response = await handler(event, context);
     expect(response.statusCode).toBe(201);
-    expect(JSON.parse(response.body!)).toEqual({ message: 'Key created successfully', id: 'new-key-id', role: 'issuer', isActive: true });
-    expect((admin.firestore().collection().add as jest.Mock)).toHaveBeenCalledWith({ role: 'issuer', isActive: true });
+    const responseBody = JSON.parse(response.body!);
+    expect(responseBody).toHaveProperty('message', 'Key created successfully');
+    expect(responseBody).toHaveProperty('keyId');
+    expect(responseBody).toHaveProperty('secret');
+    expect(responseBody).toHaveProperty('role', 'issuer');
+    expect(responseBody).toHaveProperty('isActive', true);
+    expect(responseBody).toHaveProperty('warning');
+    expect((admin.firestore().collection().doc().set as jest.Mock)).toHaveBeenCalled();
   });
 
-  it('should return 500 if Firestore add operation fails', async () => {
-    (admin.firestore().collection().add as jest.Mock).mockRejectedValue(new Error('Firestore error'));
+  it('should return 500 if Firestore set operation fails', async () => {
+    // Mock que o keyId gerado não existe
+    (admin.firestore().collection().doc().get as jest.Mock).mockResolvedValueOnce(mockKeyDoc).mockResolvedValueOnce({ exists: false });
+    (admin.firestore().collection().doc().set as jest.Mock).mockRejectedValue(new Error('Firestore error'));
     const event: NetlifyEvent = { httpMethod: 'POST', headers: { authorization: 'Bearer test-token' }, body: JSON.stringify({ role: 'issuer', isActive: true }) };
     const context = {};
     const response = await handler(event, context);
     expect(response.statusCode).toBe(500);
     expect(JSON.parse(response.body!).message).toContain('Internal Server Error');
   });
-});
 
+  it('should return 409 if a key with the same identifier already exists', async () => {
+    // Mock que o keyId gerado já existe
+    (admin.firestore().collection().doc().get as jest.Mock).mockResolvedValueOnce(mockKeyDoc).mockResolvedValueOnce({ exists: true });
+    
+    const event: NetlifyEvent = { httpMethod: 'POST', headers: { authorization: 'Bearer test-token' }, body: JSON.stringify({ role: 'issuer', isActive: true, description: 'Duplicate Key' }) };
+    const context = {};
+    const response = await handler(event, context);
+    expect(response.statusCode).toBe(409);
+    expect(JSON.parse(response.body!)).toEqual({ message: 'A key with this identifier already exists. Please use a different description.' });
+  });
+});
 export {};

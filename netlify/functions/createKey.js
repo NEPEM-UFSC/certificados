@@ -41,6 +41,7 @@
  */
 const admin = require('firebase-admin');
 const jwt = require('jsonwebtoken'); // Import the jsonwebtoken library
+const crypto = require('crypto'); // Para gerar secrets seguros
 
 if (!admin.apps.length) {
   admin.initializeApp({
@@ -57,6 +58,25 @@ const db = admin.firestore();
 // Chave especial para bootstrap inicial (não armazenada no Firestore)
 const BOOTSTRAP_KEY_ID = 'nepemcert-bootstrap';
 const BOOTSTRAP_SECRET = process.env.BOOTSTRAP_SECRET || 'nepemcert-bootstrap-secret';
+
+/**
+ * Gera um secret seguro para autenticação JWT
+ * @returns {string} Secret aleatório de 48 caracteres base64url
+ */
+function generateSecret() {
+  return crypto.randomBytes(36).toString('base64url'); // 48 caracteres
+}
+
+/**
+ * Gera um keyId baseado em username com hash ofuscado
+ * @param {string} username - Nome de usuário ou descrição base
+ * @returns {string} ID ofuscado com salt nepemcert
+ */
+function generateKeyId(username) {
+  const salt = 'nepemcert';
+  const hash = crypto.createHash('sha256').update(username + salt).digest('hex').substring(0, 16);
+  return `${username.replace(/\s+/g, '_').toLowerCase()}_${hash}`;
+}
 
 /**
  * Authenticates a request using JWT token from Authorization header.
@@ -169,7 +189,8 @@ exports.handler = async (event, context) => {
   }
 
   // Authenticate early so tests expecting 401/403/500 from auth paths get correct responses
-  const authResult = await authenticate(event, ['admin']);
+  // Allow bootstrap token for initial key creation
+  const authResult = await authenticate(event, ['admin'], true);
   if (!authResult.authenticated) {
     return authResult;
   }
@@ -201,10 +222,49 @@ exports.handler = async (event, context) => {
     };
   }
 
+  // Validação de permissões baseada no tipo de autenticação
+  if (authResult.role === 'bootstrap') {
+    // Bootstrap só pode criar chaves reader
+    if (keyData.role !== 'reader') {
+      return {
+        statusCode: 403,
+        body: JSON.stringify({ message: 'Bootstrap token can only create reader keys' }),
+      };
+    }
+  } else if (authResult.role === 'admin') {
+    // Admin pode criar qualquer role
+    // Permissão já validada na autenticação
+  } else {
+    // Outros roles não podem criar chaves
+    return {
+      statusCode: 403,
+      body: JSON.stringify({ message: `Role "${authResult.role}" cannot create keys` }),
+    };
+  }
+
   try {
+    // Gerar secret seguro
+    const secret = generateSecret();
+    
+    // Gerar keyId ofuscado baseado na description (ou role se não houver description)
+    const baseForId = keyData.description ? keyData.description.trim() : keyData.role;
+    const keyId = generateKeyId(baseForId);
+    
+    // Verificar se já existe uma chave com este keyId
+    const existingKey = await db.collection('keys').doc(keyId).get();
+    if (existingKey.exists) {
+      return {
+        statusCode: 409,
+        body: JSON.stringify({ message: 'A key with this identifier already exists. Please use a different description.' }),
+      };
+    }
+
     const toSave = {
+      secret: secret, // CRÍTICO: Salvar o secret para autenticação JWT
       role: keyData.role,
       isActive: keyData.isActive,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdBy: authResult.keyId, // Rastreabilidade: quem criou esta chave
     };
 
     // Only include description if provided
@@ -212,11 +272,19 @@ exports.handler = async (event, context) => {
       toSave.description = keyData.description.trim();
     }
 
-    const docRef = await db.collection('keys').add(toSave);
+    // Usar o keyId gerado como ID do documento
+    await db.collection('keys').doc(keyId).set(toSave);
 
     return {
       statusCode: 201,
-      body: JSON.stringify({ message: 'Key created successfully', id: docRef.id, role: toSave.role, isActive: toSave.isActive }),
+      body: JSON.stringify({ 
+        message: 'Key created successfully', 
+        keyId: keyId, 
+        secret: secret, // IMPORTANTE: Retornar secret APENAS uma vez, na criação
+        role: toSave.role, 
+        isActive: toSave.isActive,
+        warning: 'Save the secret securely! It will not be shown again.'
+      }),
     };
   } catch (error) {
     console.error('Error creating key:', error);
