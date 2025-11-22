@@ -11,7 +11,6 @@ export function init() {
   const modalContent = document.getElementById('modalContent') as HTMLDivElement;
 
   // Render Lucide icons
-  // @ts-ignore
   if (typeof lucide !== 'undefined') {
     lucide.createIcons();
   }
@@ -44,7 +43,6 @@ export function init() {
       resultSection.setAttribute('role', 'alert');
       resultMessage.className = 'text-red-800 font-semibold flex items-center justify-center';
       resultMessage.innerHTML = `<span data-lucide="alert-circle" class="mr-2"></span> Por favor, insira um código de certificado.`;
-      // @ts-ignore
       if (typeof lucide !== 'undefined') {
         lucide.createIcons();
       }
@@ -53,7 +51,6 @@ export function init() {
 
     searchButton.disabled = true;
     searchButton.innerHTML = `<span data-lucide="loader" class="mr-2 animate-spin"></span> Verificando...`;
-    // @ts-ignore
     if (typeof lucide !== 'undefined') {
       lucide.createIcons();
     }
@@ -70,7 +67,6 @@ export function init() {
         resultSection.setAttribute('role', 'alert');
         resultMessage.className = 'text-red-800 font-semibold flex items-center justify-center';
         resultMessage.innerHTML = `<span data-lucide="x-circle" class="mr-2"></span> Certificado não encontrado em nossa base de dados.`;
-        // @ts-ignore
         if (typeof lucide !== 'undefined') {
           lucide.createIcons();
         }
@@ -86,19 +82,29 @@ export function init() {
       const certificate = await response.json();
 
       if (certificate) {
-        // Processar timestamp do Firestore
+        // Processar timestamp (pode ser string ISO ou objeto Firestore Timestamp)
         let formattedTimestamp = 'Data não disponível';
-        if (certificate.timestamp && certificate.timestamp._seconds) {
-          const date = new Date(certificate.timestamp._seconds * 1000);
-          formattedTimestamp = date.toLocaleString('pt-BR', {
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit',
-            timeZoneName: 'short'
-          });
+        
+        if (certificate.timestamp) {
+          let date: Date | null = null;
+          
+          if (typeof certificate.timestamp === 'string') {
+             date = new Date(certificate.timestamp);
+          } else if (certificate.timestamp._seconds) {
+             date = new Date(certificate.timestamp._seconds * 1000);
+          }
+
+          if (date && !isNaN(date.getTime())) {
+            formattedTimestamp = date.toLocaleString('pt-BR', {
+              year: 'numeric',
+              month: 'long',
+              day: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit',
+              timeZoneName: 'short'
+            });
+          }
         }
 
         modalContent.innerHTML = `
@@ -125,7 +131,6 @@ export function init() {
     } finally {
       searchButton.disabled = false;
       searchButton.innerHTML = `<span data-lucide="search" class="w-5 h-5"></span> Buscar`;
-      // @ts-ignore
       if (typeof lucide !== 'undefined') {
         lucide.createIcons();
       }
