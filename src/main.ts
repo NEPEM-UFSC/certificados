@@ -1,15 +1,16 @@
 import './styles.css'
 
-// Utility to safely escape HTML special chars to prevent XSS
-function escapeHTML(str: string): string {
-  return str.replace(/[&<>"']/g, function (c) {
-    return ({
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;',
-      '"': '&quot;',
-      "'": '&#39;'
-    } as { [key: string]: string })[c];
+// Simple HTML escaping utility
+function escapeHtml(str: string): string {
+  return str.replace(/[&<>"']/g, function (m) {
+    switch (m) {
+      case "&": return "&amp;";
+      case "<": return "&lt;";
+      case ">": return "&gt;";
+      case '"': return "&quot;";
+      case "'": return "&#39;";
+      default: return m;
+    }
   });
 }
 
@@ -87,7 +88,7 @@ export function init() {
           </div>
           <div class="result-content">
             <h3 class="text-warning">Certificado não encontrado</h3>
-            <p class="text-warning">Não encontramos nenhum certificado com o código <strong>${escapeHTML(code)}</strong>. Verifique se digitou corretamente.</p>
+            <p class="text-warning">Não encontramos nenhum certificado com o código <strong>${escapeHtml(code)}</strong>. Verifique se digitou corretamente.</p>
           </div>
         `;
 
@@ -133,7 +134,7 @@ export function init() {
         modalContent.innerHTML = `
           <div class="cert-code-box">
             <div class="cert-code-label">Código de Autenticidade</div>
-            <div class="cert-code-value">${escapeHTML(certificate.code)}</div>
+            <div class="cert-code-value">${escapeHtml(certificate.code)}</div>
           </div>
           
           <div class="cert-details">
@@ -143,7 +144,7 @@ export function init() {
               </div>
               <div>
                 <div class="cert-label">Participante</div>
-                <div class="cert-value">${escapeHTML(certificate.name)}</div>
+                <div class="cert-value">${escapeHtml(certificate.name)}</div>
               </div>
             </div>
 
@@ -153,7 +154,7 @@ export function init() {
               </div>
               <div>
                 <div class="cert-label">Evento</div>
-                <div class="cert-value">${escapeHTML(certificate.event)}</div>
+                <div class="cert-value">${escapeHtml(certificate.event)}</div>
               </div>
             </div>
 
@@ -189,7 +190,7 @@ export function init() {
           </div>
           <div class="result-content">
             <h3 class="text-success">Certificado Válido</h3>
-            <p class="text-success">O certificado de <strong>${escapeHTML(certificate.name)}</strong> foi verificado com sucesso.</p>
+            <p class="text-success">O certificado de <strong>${escapeHtml(certificate.name)}</strong> foi verificado com sucesso.</p>
             <button id="viewDetailsBtn" class="btn-link mt-2">
               Ver detalhes novamente
             </button>
