@@ -40,21 +40,11 @@ const authenticate = async (event, requiredRoles) => {
 
     // 2. Buscar a chave secreta no Firestore usando o keyId
     const keyDoc = await db.collection('keys').doc(keyId).get();
-    console.log('DEBUG: keyDoc in writeCertificate.js:', keyDoc); // Adicionado para depuração
 
     if (!keyDoc.exists) {
       return {
         statusCode: 403,
         body: JSON.stringify({ message: 'Forbidden: API key not found in "keys" collection' }),
-      };
-    }
-
-    // Verifique se keyDoc.data é uma função antes de chamá-la
-    if (typeof keyDoc.data !== 'function') {
-      console.error('DEBUG: keyDoc.data is not a function. keyDoc:', keyDoc);
-      return {
-        statusCode: 500,
-        body: JSON.stringify({ message: 'Internal Server Error: Invalid key document structure' }),
       };
     }
 
