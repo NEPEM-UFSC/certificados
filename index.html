@@ -1,60 +1,105 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="pt-BR">
 
 <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Sistema de Verificação de Certificados NEPEM-UFSC">
 
-    <title>Verificação de Certificados</title>
-    <link href="https://unpkg.com/tailwindcss@^2/dist/tailwind.min.css" rel="stylesheet">
+    <title>Verificação de Certificados | NEPEM-UFSC</title>
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <!-- Main Script -->
     <script type="module" src="/src/main.ts"></script>
 </head>
 
-<body class="bg-gradient-to-br from-green-500 to-green-700 flex items-center justify-center min-h-screen">
-    <div id="app" class="bg-white p-8 rounded-lg shadow-md w-full max-w-lg">
-
-                <!-- Adicionando o logo acima do título -->
-        <a href="https://nepemufsc.com" target="_blank" rel="noopener noreferrer" class="flex justify-center mb-4">
-            <img src="logo.png" alt="Logo" class="h-16 w-auto">
-        </a>
-        <h1 class="text-3xl font-extrabold text-center text-green-800 mb-6">Verificação de Certificados</h1>
-
-        <div class="mb-4">
-            <label for="certificateNumber" class="block text-gray-700 text-sm font-bold mb-2">Número do Certificado:</label>
-            <div class="flex">
-                <input id="certificateNumber" type="text" placeholder="Digite o número do certificado"
-                    class="shadow appearance-none border rounded-l w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
-                    aria-label="Número do Certificado">
-                <button id="searchButton"
-                    class="bg-green-700 hover:bg-green-800 text-white font-bold py-2 px-4 rounded-r focus:outline-none focus:shadow-outline"
-                    aria-label="Search">
-                    <span data-lucide="search" class="w-5 h-5"></span>
-                </button>
-            </div>
-        </div>
-
-        <div id="resultSection" class="hidden bg-green-50 border-l-4 border-green-400 p-4 mb-4 rounded">
-            <p id="resultMessage" class="text-green-800 font-semibold"></p>
-        </div>
+<body>
+    <!-- Background decoration -->
+    <div class="bg-decoration">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
     </div>
 
-    <!-- Modal de Detalhes do Certificado -->
-    <div id="certificateModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden items-center justify-center p-4">
-        <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-md relative">
-            <button id="closeModal" class="absolute top-4 right-4 text-gray-500 hover:text-gray-800" aria-label="Fechar">
-                <span data-lucide="x" class="w-6 h-6"></span>
-            </button>
-            <h2 class="text-2xl font-bold mb-6 text-center text-green-700">Detalhes do Certificado</h2>
-            <div id="modalContent" class="text-gray-700 space-y-2">
-                <!-- Conteúdo do certificado será injetado aqui -->
+    <!-- Header -->
+    <header>
+        <a href="https://nepemufsc.com" target="_blank" rel="noopener noreferrer">
+            <img src="logo.png" alt="NEPEM UFSC Logo" class="logo">
+        </a>
+    </header>
+
+    <!-- Main Content -->
+    <main>
+        <div id="app" class="container">
+            
+            <!-- Search Card -->
+            <div class="glass-panel">
+                <div class="text-center mb-8">
+                    <h1>Validar Certificado</h1>
+                    <p class="subtitle">Digite o código de autenticidade para verificar a validade do documento.</p>
+                </div>
+
+                <div class="form-group">
+                    <div class="input-group">
+                        <div class="input-icon">
+                            <span data-lucide="shield-check" width="24" height="24"></span>
+                        </div>
+                        <input id="certificateNumber" type="text" 
+                            placeholder="Ex: CERT-2024-XYZ"
+                            aria-label="Número do Certificado">
+                    </div>
+                    
+                    <button id="searchButton" class="btn btn-primary">
+                        <span data-lucide="search" width="20" height="20"></span>
+                        Verificar Autenticidade
+                    </button>
+                </div>
             </div>
-            <div class="mt-6 text-center">
-                <button id="closeModalButton" class="bg-green-700 hover:bg-green-800 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
-                    aria-label="Fechar Modal">
-                    Fechar
+
+            <!-- Result Section (Hidden by default) -->
+            <div id="resultSection" class="hidden">
+                <!-- Content injected by JS -->
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer>
+        <p>&copy; <script>document.write(new Date().getFullYear())</script> NEPEM UFSC. Todos os direitos reservados.</p>
+    </footer>
+
+    <!-- Modal -->
+    <div id="certificateModal" class="modal-overlay" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+        <div class="modal-container">
+            <!-- Header -->
+            <div class="modal-header">
+                <div class="modal-icon-wrapper">
+                    <span data-lucide="award" width="32" height="32"></span>
+                </div>
+                <button id="closeModal" class="modal-close" aria-label="Fechar modal">
+                    <span data-lucide="x" width="24" height="24"></span>
                 </button>
+            </div>
+
+            <div class="modal-body">
+                <h2 id="modal-title" class="modal-title">Certificado Válido</h2>
+                
+                <div id="modalContent">
+                    <!-- Content injected by JS -->
+                </div>
+
+                <div class="modal-footer">
+                    <button id="closeModalButton" class="btn btn-secondary">
+                        Fechar
+                    </button>
+                </div>
             </div>
         </div>
     </div>

@@ -4,7 +4,6 @@ export function init() {
   const searchButton = document.getElementById('searchButton') as HTMLButtonElement;
   const certificateNumberInput = document.getElementById('certificateNumber') as HTMLInputElement;
   const resultSection = document.getElementById('resultSection') as HTMLDivElement;
-  const resultMessage = document.getElementById('resultMessage') as HTMLParagraphElement;
   const certificateModal = document.getElementById('certificateModal') as HTMLDivElement;
   const closeModalButton = document.getElementById('closeModalButton') as HTMLButtonElement;
   const closeModalIcon = document.getElementById('closeModal') as HTMLButtonElement;
@@ -16,13 +15,11 @@ export function init() {
   }
 
   const showModal = () => {
-    certificateModal.classList.remove('hidden');
-    certificateModal.classList.add('flex');
+    certificateModal.classList.add('active');
   };
 
   const hideModal = () => {
-    certificateModal.classList.add('hidden');
-    certificateModal.classList.remove('flex');
+    certificateModal.classList.remove('active');
   };
 
   closeModalButton.addEventListener('click', hideModal);
@@ -35,14 +32,22 @@ export function init() {
 
   const verifyCertificate = async (code: string) => {
     resultSection.classList.add('hidden'); // Hide previous results
-    resultMessage.innerHTML = ''; // Clear previous message
+    resultSection.innerHTML = ''; // Clear previous content
 
     if (!code) {
       resultSection.classList.remove('hidden');
-      resultSection.className = 'bg-red-100 border-l-4 border-red-400 p-4 mb-4 rounded';
-      resultSection.setAttribute('role', 'alert');
-      resultMessage.className = 'text-red-800 font-semibold flex items-center justify-center';
-      resultMessage.innerHTML = `<span data-lucide="alert-circle" class="mr-2"></span> Por favor, insira um código de certificado.`;
+      resultSection.className = 'result-card error';
+      
+      resultSection.innerHTML = `
+        <div class="result-icon">
+          <span data-lucide="alert-circle" class="text-error" width="24" height="24"></span>
+        </div>
+        <div class="result-content">
+          <h3 class="text-error">Campo obrigatório</h3>
+          <p class="text-error">Por favor, insira um código de certificado para realizar a busca.</p>
+        </div>
+      `;
+      
       if (typeof lucide !== 'undefined') {
         lucide.createIcons();
       }
@@ -50,7 +55,8 @@ export function init() {
     }
 
     searchButton.disabled = true;
-    searchButton.innerHTML = `<span data-lucide="loader" class="mr-2 animate-spin"></span> Verificando...`;
+    searchButton.innerHTML = `<span data-lucide="loader" class="animate-spin" width="20" height="20"></span> Verificando...`;
+    
     if (typeof lucide !== 'undefined') {
       lucide.createIcons();
     }
@@ -58,15 +64,20 @@ export function init() {
     try {
       const response = await fetch(`/.netlify/functions/getCertificate?code=${code}`);
       
-      console.log('Response status:', response.status);
-      console.log('Response headers:', Object.fromEntries(response.headers.entries()));
-      
       if (response.status === 404) {
         resultSection.classList.remove('hidden');
-        resultSection.className = 'bg-red-100 border-l-4 border-red-400 p-4 mb-4 rounded';
-        resultSection.setAttribute('role', 'alert');
-        resultMessage.className = 'text-red-800 font-semibold flex items-center justify-center';
-        resultMessage.innerHTML = `<span data-lucide="x-circle" class="mr-2"></span> Certificado não encontrado em nossa base de dados.`;
+        resultSection.className = 'result-card warning';
+        
+        resultSection.innerHTML = `
+          <div class="result-icon">
+            <span data-lucide="search-x" class="text-warning" width="24" height="24"></span>
+          </div>
+          <div class="result-content">
+            <h3 class="text-warning">Certificado não encontrado</h3>
+            <p class="text-warning">Não encontramos nenhum certificado com o código <strong>${code}</strong>. Verifique se digitou corretamente.</p>
+          </div>
+        `;
+
         if (typeof lucide !== 'undefined') {
           lucide.createIcons();
         }
@@ -75,14 +86,13 @@ export function init() {
       
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('Error response:', errorText);
         throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
       }
       
       const certificate = await response.json();
 
       if (certificate) {
-        // Processar timestamp (pode ser string ISO ou objeto Firestore Timestamp)
+        // Processar timestamp
         let formattedTimestamp = 'Data não disponível';
         
         if (certificate.timestamp) {
@@ -108,29 +118,95 @@ export function init() {
         }
 
         modalContent.innerHTML = `
-          <p class="flex items-center"><span data-lucide="tag" class="mr-2 text-green-700"></span><strong>Código:</strong> ${certificate.code}</p>
-          <p class="flex items-center"><span data-lucide="user" class="mr-2 text-green-700"></span><strong>Nome:</strong> ${certificate.name}</p>
-          <p class="flex items-center"><span data-lucide="calendar" class="mr-2 text-green-700"></span><strong>Evento:</strong> ${certificate.event}</p>
-          <p class="flex items-center"><span data-lucide="user-check" class="mr-2 text-green-700"></span><strong>Criado por:</strong> ${certificate.createdBy}</p>
-          <p class="flex items-center"><span data-lucide="clock" class="mr-2 text-green-700"></span><strong>Data de criação:</strong> ${formattedTimestamp}</p>
+          <div class="cert-code-box">
+            <div class="cert-code-label">Código de Autenticidade</div>
+            <div class="cert-code-value">${certificate.code}</div>
+          </div>
+          
+          <div class="cert-details">
+            <div class="cert-detail-group">
+              <div class="cert-icon">
+                <span data-lucide="user" width="20" height="20"></span>
+              </div>
+              <div>
+                <div class="cert-label">Participante</div>
+                <div class="cert-value">${certificate.name}</div>
+              </div>
+            </div>
+
+            <div class="cert-detail-group">
+              <div class="cert-icon">
+                <span data-lucide="calendar" width="20" height="20"></span>
+              </div>
+              <div>
+                <div class="cert-label">Evento</div>
+                <div class="cert-value">${certificate.event}</div>
+              </div>
+            </div>
+
+            <div class="cert-detail-group">
+              <div class="cert-icon">
+                <span data-lucide="clock" width="20" height="20"></span>
+              </div>
+              <div>
+                <div class="cert-label">Data de Emissão</div>
+                <div class="cert-value" style="font-weight: 400;">${formattedTimestamp}</div>
+              </div>
+            </div>
+            
+            <div class="cert-detail-group" style="border-top: 1px solid #f3f4f6; padding-top: 1rem; margin-top: 0.5rem;">
+              <div class="cert-icon">
+                <span data-lucide="shield-check" width="20" height="20"></span>
+              </div>
+              <div>
+                <div class="cert-label">Status</div>
+                <div class="cert-value" style="color: var(--color-success);">Válido e Autêntico</div>
+              </div>
+            </div>
+          </div>
         `;
         showModal();
+        
+        // Success message in main area
         resultSection.classList.remove('hidden');
-        resultSection.className = 'bg-green-50 border-l-4 border-green-400 p-4 mb-4 rounded';
-        resultSection.setAttribute('role', 'alert');
-        resultMessage.className = 'text-green-800 font-semibold flex items-center justify-center';
-        resultMessage.innerHTML = `<span data-lucide="check-circle" class="mr-2"></span> Certificado encontrado!`;
+        resultSection.className = 'result-card success';
+        resultSection.innerHTML = `
+          <div class="result-icon">
+            <span data-lucide="check-circle" class="text-success" width="24" height="24"></span>
+          </div>
+          <div class="result-content">
+            <h3 class="text-success">Certificado Válido</h3>
+            <p class="text-success">O certificado de <strong>${certificate.name}</strong> foi verificado com sucesso.</p>
+            <button id="viewDetailsBtn" class="btn-link mt-2">
+              Ver detalhes novamente
+            </button>
+          </div>
+        `;
+        
+        setTimeout(() => {
+            const viewDetailsBtn = document.getElementById('viewDetailsBtn');
+            if(viewDetailsBtn) {
+                viewDetailsBtn.addEventListener('click', showModal);
+            }
+        }, 0);
+
       }
     } catch (error) {
       console.error('Erro ao carregar ou verificar o certificado:', error);
       resultSection.classList.remove('hidden');
-      resultSection.className = 'bg-red-100 border-l-4 border-red-400 p-4 mb-4 rounded';
-      resultSection.setAttribute('role', 'alert');
-      resultMessage.className = 'text-red-800 font-semibold flex items-center justify-center';
-      resultMessage.innerHTML = `<span data-lucide="alert-triangle" class="mr-2"></span> Ocorreu um erro ao verificar o certificado. Tente novamente.`;
+      resultSection.className = 'result-card error';
+      resultSection.innerHTML = `
+        <div class="result-icon">
+          <span data-lucide="alert-triangle" class="text-error" width="24" height="24"></span>
+        </div>
+        <div class="result-content">
+          <h3 class="text-error">Erro de Conexão</h3>
+          <p class="text-error">Ocorreu um erro ao verificar o certificado. Por favor, verifique sua conexão e tente novamente.</p>
+        </div>
+      `;
     } finally {
       searchButton.disabled = false;
-      searchButton.innerHTML = `<span data-lucide="search" class="w-5 h-5"></span> Buscar`;
+      searchButton.innerHTML = `<span data-lucide="search" width="20" height="20"></span> Verificar Autenticidade`;
       if (typeof lucide !== 'undefined') {
         lucide.createIcons();
       }
