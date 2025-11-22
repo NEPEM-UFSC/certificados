@@ -1,6 +1,6 @@
 {
   "name": "web-nepemcert",
-  "version": "0.8.2",
+  "version": "0.8.4",
   "scripts": {
     "dev": "vite",
     "dev:netlify": "netlify dev",
